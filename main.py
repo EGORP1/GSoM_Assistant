@@ -12,11 +12,6 @@ dp = Dispatcher()
 
 # ======================= Клавиатуры =======================
 
-# стартовая клавиатура с кнопкой "Запустить бота"
-start_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="▶️ Запустить бота", callback_data="run_bot")]
-])
-
 # главная клавиатура
 main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [
@@ -60,24 +55,15 @@ contacts_keyboard = InlineKeyboardMarkup(inline_keyboard=[
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    await message.answer(
-        "Добро пожаловать! Нажми кнопку ниже, чтобы запустить бота.",
-        reply_markup=start_keyboard
+    text = (
+        "Привет! 👋\n\n"
+        " Я твой ассистент в СПбГУ.\n\n Помогу с расписанием, расскажу про студклубы, дам полезные ссылки и контакты. 👇"
     )
+    await message.answer(text, reply_markup=main_keyboard)
 
 @dp.callback_query()
 async def callback_handler(callback: types.CallbackQuery):
-    # запуск бота с кнопки
-    if callback.data == "run_bot":
-        text = (
-            "Привет! 👋\n\n"
-            "Я твой ассистент в СПбГУ.\n\n"
-            "Помогу с расписанием, расскажу про студклубы, дам полезные ссылки и контакты. 👇"
-        )
-        # меняем сообщение и показываем главное меню
-        await callback.message.edit_text(text, reply_markup=main_keyboard)
-
-    elif callback.data == "studclubs":
+    if callback.data == "studclubs":
         await callback.message.edit_text("🎭 Студклубы:", reply_markup=studclubs_keyboard)
 
     elif callback.data == "contacts":
