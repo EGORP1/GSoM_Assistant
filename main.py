@@ -1,16 +1,27 @@
-# ...existing code...
+import os
+import sys
 import asyncio
+import logging
+
+# .env support (не обязателен)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import Command
 
-# вставь свой токен
-TOKEN = "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs"
-
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+logging.basicConfig(level=logging.INFO)
 
 # ======================= Клавиатуры =======================
+
+# стартовая клавиатура с кнопкой "Запустить бота"
+start_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="▶️ Запустить бота", callback_data="run_bot")]
+])
 
 # главная клавиатура
 main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -51,19 +62,31 @@ contacts_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
 ])
 
+# ======================= Инициализация DP =======================
+
+dp = Dispatcher()
+
 # ======================= Хендлеры =======================
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    text = (
-        "Привет! 👋\n\n"
-        " Я твой ассистент в СПбГУ.\n\n Помогу с расписанием, расскажу про студклубы, дам полезные ссылки и контакты. 👇"
+    await message.answer(
+        "Добро пожаловать! Нажми кнопку ниже, чтобы запустить бота.",
+        reply_markup=start_keyboard
     )
-    await message.answer(text, reply_markup=main_keyboard)
 
 @dp.callback_query()
 async def callback_handler(callback: types.CallbackQuery):
-    if callback.data == "studclubs":
+    # запуск бота с кнопки
+    if callback.data == "run_bot":
+        text = (
+            "Привет! 👋\n\n"
+            "Я твой ассистент в СПбГУ.\n\n"
+            "Помогу с расписанием, расскажу про студклубы, дам полезные ссылки и контакты. 👇"
+        )
+        await callback.message.edit_text(text, reply_markup=main_keyboard)
+
+    elif callback.data == "studclubs":
         await callback.message.edit_text("🎭 Студклубы:", reply_markup=studclubs_keyboard)
 
     elif callback.data == "contacts":
@@ -177,6 +200,25 @@ async def callback_handler(callback: types.CallbackQuery):
 # ======================= Запуск =======================
 
 async def main():
+    token = (
+        os.getenv("BOT_TOKEN")         # основной вариант
+        or os.getenv("TELEGRAM_TOKEN") # запасной
+        or os.getenv("TOKEN")          # ещё один запасной
+    )
+
+    if not token:
+        print(
+            "❌ Не найден токен бота.\n"
+            "Установи переменную окружения BOT_TOKEN или добавь её в файл .env, например:\n"
+            "BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11\n",
+            file=sys.stderr
+        )
+        sys.exit(1)
+
+    bot = Bot(token=token)
+    # На всякий случай — чистим вебхук, чтобы polling не конфликтовал
+    await bot.delete_webhook(drop_pending_updates=True)
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
