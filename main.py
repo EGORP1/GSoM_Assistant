@@ -10,6 +10,21 @@ TOKEN = "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+start_keyboard = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="▶️ Запустить бота")]],
+    resize_keyboard=True
+)
+@dp.message(CommandStart())
+@dp.message(F.text == "▶️ Запустить бота")
+async def start_handler(message: Message):
+    await message.answer("Бот запущен 👋", reply_markup=start_keyboard)
+
+async def main():
+    bot = Bot(token=TOKEN)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 # ======================= Клавиатуры =======================
 
 # главная клавиатура
