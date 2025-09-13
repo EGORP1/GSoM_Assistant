@@ -12,7 +12,7 @@ from aiogram.types import (
 )
 
 # ====== Токен ======
-TOKEN = "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs"   # замени на свой при необходимости
+TOKEN = "8350392810:AAFEXWSBlYBw0eCw8oXyblDaiCovkLIqDPc"   # замени на свой
 if not TOKEN or ":" not in TOKEN:
     raise RuntimeError("Некорректный токен Telegram бота.")
 
@@ -109,17 +109,17 @@ async def _full_restart_flow(message: types.Message, show_reply_button_first: bo
     await _delete_tracked_user_commands(chat_id)
     await _delete_tracked_bot_messages(chat_id)
 
-    # активируем reply-клавиатуру, но само сервисное сообщение удаляем,
-    # чтобы в чате не оставалось два сообщения
+    # ВАЖНО: оставляем сервисное сообщение с reply-клавиатурой,
+    # иначе клавиатура исчезнет (привязана к последнему сообщению).
     if show_reply_button_first:
-        service = await bot.send_message(chat_id, "Нажми «Запуск бота», чтобы начать 👇", reply_markup=reply_keyboard)
-        try:
-            await bot.delete_message(chat_id, service.message_id)
-        except Exception:
-            pass
-        tracked_bot_msgs[chat_id].discard(service.message_id)
+        service = await bot.send_message(
+            chat_id,
+            "Нажми «Запуск бота», чтобы начать 👇",
+            reply_markup=reply_keyboard
+        )
+        await _track_bot_message(service)
 
-    # основное приветствие
+    # приветствие с инлайн-меню
     await _send_welcome(chat_id)
 
 # ======================= /start и кнопка «Запуск бота» =======================
@@ -161,7 +161,7 @@ async def callback_handler(cb: types.CallbackQuery):
         text = (
             "🧺 <b>Прачка СПбГУ</b>\n\n"
             "1️⃣ <a href='https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing'>Первый корпус</a>\n"
-            "2️⃣ <a href='https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk'>Второй корпус</a>\n"
+            "2️⃣ <a href='https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHнNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk'>Второй корпус</a>\n"
             "3️⃣ <a href='https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing'>Третий корпус</a>\n"
             "4️⃣ <a href='https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit'>Четвертый корпус</a>\n"
             "5️⃣ <a href='https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing'>Пятый корпус</a>\n"
