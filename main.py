@@ -12,7 +12,7 @@ from aiogram.types import (
 )
 
 # ====== Токен ======
-TOKEN = "8350392810:AAFEXWSBlYBw0eCw8oXyblDaiCovkLIqDPc"   # замени на свой
+TOKEN = "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs"   # замени на свой
 if not TOKEN or ":" not in TOKEN:
     raise RuntimeError("Некорректный токен Telegram бота.")
 
