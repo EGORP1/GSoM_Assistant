@@ -166,9 +166,9 @@ WELCOME_TEXT = (
 LAUNDRY_TEXT_HTML = (
     "🧺 <b>Прачка СПбГУ</b>\n\n"
     "1) <a href=\"https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing\">Первый корпус</a>\n"
-    "2) <a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
-    "3) <a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
-    "4) <a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit\">Четвертый корпус</a>\n"
+    "2) <a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHнNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
+    "3) <a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5м7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
+    "4) <a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CнX1wzQis/edit\">Четвертый корпус</a>\n"
     "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
     "6) <a href=\"https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing\">Шестой корпус</a>\n"
     "7) <a href=\"https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk\">Седьмой корпус</a>\n"
@@ -201,8 +201,6 @@ CASE_CLUB_TEXT_HTML = section_wrap(
 KBK_TEXT_HTML = (
     "🎤 <b>КБК</b> — это уникальный всероссийский проект для обмена знаниями о Китае, "
     "созданный студентами и молодыми профессионалами со всей России.\n\n"
-    "Он объединяет массу актуальных форматов: от нескучных лекций и мастер-классов "
-    "до полезных карьерных консультаций и ярких творческих выступлений.\n\n"
     "🌐 <a href='https://forum-cbc.ru/'>Сайт</a>\n"
     "📘 <a href='https://vk.com/forumcbc'>ВКонтакте</a>\n"
     "📲 <a href='https://t.me/forumcbc'>Telegram</a>"
@@ -340,6 +338,18 @@ async def start_handler(message: types.Message):
     placeholder = await bot.send_message(message.chat.id, " ", reply_markup=reply_keyboard)
     _track_bot_message(placeholder)
 
+# ===== /clear — очистка всех сообщений бота =====
+@dp.message(Command("clear"))
+async def clear_handler(message: types.Message):
+    chat_id = message.chat.id
+
+    async def purge_later():
+        await asyncio.sleep(0.7)        # через 0.7 c — снести все сообщения бота
+        await purge_chat_messages(chat_id)
+
+    asyncio.create_task(purge_later())
+    asyncio.create_task(schedule_delete(chat_id, message.message_id, 1.0))  # самоудаление /clear через 1.0 c
+
 # ======================= Кнопка "Запуск бота" =======================
 @dp.message(F.text == REPLY_START_BTN)
 async def reply_start_handler(message: types.Message):
@@ -396,6 +406,7 @@ async def main():
             types.BotCommand(command="start", description="Запуск / перезапуск"),
             types.BotCommand(command="menu",  description="Открыть меню"),
             types.BotCommand(command="help",  description="Помощь"),
+            types.BotCommand(command="clear", description="Очистить сообщения бота"),
         ])
     except Exception:
         pass
