@@ -91,7 +91,7 @@ async def think(chat_id: int, delay: float = 0.45):
 
 async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
     await think(chat_id)
-    text = to_thin(text, html_safe=True, airy_cyrillic=False)  # << вариант B
+    text = to_thin(text, html_safe=True, airy_cyrилlic=False)  # << вариант B
     return await bot.send_message(
         chat_id, text,
         parse_mode="HTML",
@@ -101,7 +101,7 @@ async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] 
 
 async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMarkup] = None):
     await asyncio.sleep(0.15)
-    text = to_thin(text, html_safe=True, airy_cyrillic=False)  # << вариант B
+    text = to_thin(text, html_safe=True, airy_cyrилlic=False)  # << вариант B
     return await msg.edit_text(
         text,
         parse_mode="HTML",
@@ -116,17 +116,18 @@ WELCOME_TEXT = (
     "Помогу с расписанием, расскажу про студклубы, дам полезные ссылки и контакты. 👇"
 )
 
+# iOS-friendly <a>: внутри НЕТ <b>. Также убраны эмодзи-цифры — обычная нумерация.
 LAUNDRY_TEXT_HTML = (
     "🧺 <b>Прачка СПбГУ</b>\n\n"
-    "1️⃣ <a href='https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing'><b>Первый корпус</b></a>\n"
-    "2️⃣ <a href='https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk'><b>Второй корпус</b></a>\n"
-    "3️⃣ <a href='https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing'><b>Третий корпус</b></a>\n"
-    "4️⃣ <a href='https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit'><b>Четвертый корпус</b></a>\n"
-    "5️⃣ <a href='https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing'><b>Пятый корпус</b></a>\n"
-    "6️⃣ <a href='https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing'><b>Шестой корпус</b></a>\n"
-    "7️⃣ <a href='https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk'><b>Седьмой корпус</b></a>\n"
-    "8️⃣ <a href='https://docs.google.com/spreadsheets/d/1EBvaLpxAK5r91yc-jaCa8bj8iLumwJvGFjTDlEArRLA/edit?usp=sharing'><b>Восьмой корпус</b></a>\n"
-    "9️⃣ <a href='https://docs.google.com/spreadsheets/d/1wGxLQLF5X22JEqMlq0mSVXMyrMQslXbemo-Z8YQcSS8/edit?usp=sharing'><b>Девятый корпус</b></a>"
+    "1) <a href='https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing'>Первый корпус</a>\n"
+    "2) <a href='https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk'>Второй корпус</a>\n"
+    "3) <a href='https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing'>Третий корпус</a>\n"
+    "4) <a href='https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit'>Четвертый корпус</a>\n"
+    "5) <a href='https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing'>Пятый корпус</a>\n"
+    "6) <a href='https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing'>Шестой корпус</a>\n"
+    "7) <a href='https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk'>Седьмой корпус</a>\n"
+    "8) <a href='https://docs.google.com/spreadsheets/d/1EBvaLpxAK5r91yc-jaCa8bj8iLumwJvGFjTDlEArRLA/edit?usp=sharing'>Восьмой корпус</a>\n"
+    "9) <a href='https://docs.google.com/spreadsheets/d/1wGxLQLF5X22JEqMlq0mSVXMyrMQslXbemo-Z8YQcSS8/edit?usp=sharing'>Девятый корпус</a>"
 )
 
 def section_wrap(title, items):
@@ -134,12 +135,13 @@ def section_wrap(title, items):
 
 WATER_TEXT_HTML = section_wrap("🚰 Вода", ["Пока пишите по номеру:", "<b>📞 +7 933 341-73-75</b>"])
 
+# iOS-friendly <a> (без <b> внутри)
 LOST_TEXT_HTML = section_wrap(
     "🔎 Потеряшки СПбГУ",
     [
         "Группа для поиска потерянных вещей и возврата владельцам.",
         "Если что-то потерял или нашёл — напиши сюда!",
-        "📲 <a href='https://t.me/+CzTrsVUbavM5YzNi'><b>Перейти в Telegram-группу</b></a>"
+        "📲 <a href='https://t.me/+CzTrsVUbavM5YzNi'>Перейти в Telegram-группу</a>"
     ]
 )
 
@@ -147,7 +149,7 @@ CASE_CLUB_TEXT_HTML = section_wrap(
     "📊 GSOM SPbU Case Club",
     [
         "Студклуб для развития навыков решения кейсов и консалтинга.",
-        "📲 <a href='https://t.me/gsomspbucaseclub'><b>Telegram</b></a>"
+        "📲 <a href='https://t.me/gsomspbucaseclub'>Telegram</a>"
     ]
 )
 
@@ -161,16 +163,16 @@ KBK_TEXT_HTML = (
     "полезные связи и крутые карьерные возможности.\n\n"
     "Следи за КБК из любой точки нашей страны и готовься к кульминации сезона — масштабному форуму, "
     "который пройдёт в стенах лучшей бизнес-школы России ВШМ СПбГУ уже этой весной!\n\n"
-    "🌐 <a href='https://forum-cbc.ru/'><b>Сайт</b></a>\n"
-    "📘 <a href='https://vk.com/forumcbc'><b>ВКонтакте</b></a>\n"
-    "📲 <a href='https://t.me/forumcbc'><b>Telegram</b></a>"
+    "🌐 <a href='https://forum-cbc.ru/'>Сайт</a>\n"
+    "📘 <a href='https://vk.com/forumcbc'>ВКонтакте</a>\n"
+    "📲 <a href='https://t.me/forumcbc'>Telegram</a>"
 )
 
 FALCON_TEXT_HTML = section_wrap(
     "💼 Falcon Business Club",
     [
         "Предпринимательство: бизнес-игры, мастер-классы, менторы и гранты.",
-        "📲 <a href='https://t.me/falcongsom'><b>Telegram</b></a>"
+        "📲 <a href='https://t.me/falcongsom'>Telegram</a>"
     ]
 )
 
@@ -181,8 +183,8 @@ MCW_TEXT_HTML = section_wrap(
         "В рамках карьерной недели проходят мероприятия различных форматов на актуальные темы профессионального мира для самых амбициозных",
         "студентов.",
         "Контакты:",
-        "📘 <a href='https://vk.com/mcwgsom'><b>ВКонтакте</b></a>",
-        "📲 <a href='https://t.me/mcwgsom'><b>Telegram</b></a>"
+        "📘 <a href='https://vk.com/mcwgsom'>ВКонтакте</a>",
+        "📲 <a href='https://t.me/mcwgsom'>Telegram</a>"
     ]
 )
 
@@ -191,7 +193,7 @@ GOLF_TEXT_HTML = section_wrap(
     [
         "Студенческое сообщество гольфистов СПбГУ.",
         "Контакты: Дима @dmetlyaev; Света @Ant_Svetlana",
-        "📲 <a href='https://t.me/GSOM_GOLFCLUB'><b>Telegram</b></a>"
+        "📲 <a href='https://t.me/GSOM_GOLFCLUB'>Telegram</a>"
     ]
 )
 
@@ -199,7 +201,7 @@ SPORT_CULTURE_TEXT_HTML = section_wrap(
     "⚽ Sport and Culture",
     [
         "Спорт и культура: турниры, концерты, мероприятия.",
-        "📲 <a href='https://t.me/gsomsport'><b>Telegram</b></a>"
+        "📲 <a href='https://t.me/gsomsport'>Telegram</a>"
     ]
 )
 
@@ -239,7 +241,7 @@ HELP_TEXT = section_wrap(
         "Команды: /start — перезапуск, /menu — открыть меню, /help — помощь.",
         "Reply-кнопка «Запуск бота» — быстрый возврат к началу.",
         "Ссылки в карточках кликабельны.",
-        "Если что-то не работает — <a href='https://t.me/MeEncantaNegociar'><b>Telegram</b></a>"
+        "Если что-то не работает — <a href='https://t.me/MeEncantaNegociar'>Telegram</a>"
     ]
 )
 
