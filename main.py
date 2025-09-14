@@ -3,7 +3,7 @@ import re
 import asyncio
 import logging
 from collections import defaultdict
-from typing import List, Tuple, Optional, Sequence
+from typing import List, Tuple, Optional, Sequence, Dict
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -31,14 +31,15 @@ reply_keyboard = ReplyKeyboardMarkup(
     input_field_placeholder=""
 )
 
-# ==== Трекинг сообщений для последующей очистки ====
+# ==== Трекинг сообщений ====
 help_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
 menu_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
 welcome_msgs:   defaultdict[int, set[int]] = defaultdict(set)
 reply_placeholders: defaultdict[int, set[int]] = defaultdict(set)
-
 all_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
 
+# Текущий экран в чате (чтобы не дублировать)
+CURRENT_VIEW: Dict[int, str] = {}   # 'welcome' | 'menu' | 'help' | ...
 
 # ======================= ТОНКИЙ ЮНИКОД =======================
 _THIN_MAP = str.maketrans({
@@ -114,16 +115,6 @@ async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMa
         reply_markup=kb
     )
 
-async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMarkup] = None):
-    await asyncio.sleep(0.15)
-    text = to_thin(text, html_safe=True, airy_cyrillic=False)  # << вариант B
-    return await msg.edit_text(
-        text,
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-        reply_markup=kb
-    )
-
 # ======================= ТЕКСТЫ =======================
 WELCOME_TEXT = (
     "<b>Привет! 👋</b>\n\n"
@@ -133,13 +124,13 @@ WELCOME_TEXT = (
 
 LAUNDRY_TEXT_HTML = (
     "🧺 <b>Прачка СПбГУ</b>\n\n"
-    "<a href=\"https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing\">Первый корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXгWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing\">Первый корпус</a>\n"
     "<a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
     "<a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
     "<a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit\">Четвертый корпус</a>\n"
     "<a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
     "<a href=\"https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing\">Шестой корпус</a>\n"
-    "<a href=\"https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk\">Седьмой корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mО4D_VTMrSa4/edit?usp=drivesdk\">Седьмой корпус</a>\n"
     "<a href=\"https://docs.google.com/spreadsheets/d/1EBvaLpxAK5r91yc-jaCa8bj8iLumwJvGFjTDlEArRLA/edit?usp=sharing\">Восьмой корпус</a>\n"
     "<a href=\"https://docs.google.com/spreadsheets/d/1wGxLQLF5X22JEqMlq0mSVXMyrMQslXbemo-Z8YQcSS8/edit?usp=sharing\">Девятый корпус</a>"
 )
@@ -167,15 +158,7 @@ CASE_CLUB_TEXT_HTML = section_wrap(
 )
 
 KBK_TEXT_HTML = (
-    "🎤 <b>КБК</b> — это уникальный всероссийский проект для обмена знаниями о Китае, "
-    "созданный студентами и молодыми профессионалами со всей России.\n\n"
-    "Он объединяет массу актуальных форматов: от нескучных лекций и мастер-классов "
-    "до полезных карьерных консультаций и ярких творческих выступлений.\n\n"
-    "Погрузиться в атмосферу Китая теперь можно и в онлайн-режиме — через наш эксклюзивный контент "
-    "и медиа-шоу, которое захватывает с первой серии. С нами ты получишь экспертные знания, "
-    "полезные связи и крутые карьерные возможности.\n\n"
-    "Следи за КБК из любой точки нашей страны и готовься к кульминации сезона — масштабному форуму, "
-    "который пройдёт в стенах лучшей бизнес-школы России ВШМ СПбГУ уже этой весной!\n\n"
+    "🎤 <b>КБК</b> — это уникальный всероссийский проект для обмена знаниями о Китае, ...\n\n"
     "🌐 <a href='https://forum-cbc.ru/'><b>Сайт</b></a>\n"
     "📘 <a href='https://vk.com/forumcbc'><b>ВКонтакте</b></a>\n"
     "📲 <a href='https://t.me/forumcbc'><b>Telegram</b></a>"
@@ -193,9 +176,6 @@ MCW_TEXT_HTML = section_wrap(
     "👫 MCW",
     [
         "Management Career Week — главное карьерное мероприятие ВШМ СПбГУ",
-        "В рамках карьерной недели проходят мероприятия различных форматов на актуальные темы профессионального мира для самых амбициозных",
-        "студентов.",
-        "Контакты:",
         "📘 <a href='https://vk.com/mcwgsom'><b>ВКонтакте</b></a>",
         "📲 <a href='https://t.me/mcwgsom'><b>Telegram</b></a>"
     ]
@@ -290,16 +270,19 @@ contacts_keyboard = grid([
     ("⬅️ Назад",          "cb", "back_main"),
 ], per_row=2)
 
-# ======================= Вспом. очистка приветствий =======================
+# ======================= Утилиты очистки =======================
+async def _purge_set(chat_id: int, storage: defaultdict[int, set[int]]):
+    """Удалить все сообщения из указанного набора и очистить его."""
+    for mid in list(storage.get(chat_id, set())):
+        try:
+            await bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+    storage[chat_id].clear()
+
 async def _clear_welcomes(chat_id: int):
-    for mid in list(welcome_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    welcome_msgs[chat_id].clear()
-    for mid in list(reply_placeholders.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    reply_placeholders[chat_id].clear()
+    await _purge_set(chat_id, welcome_msgs)
+    await _purge_set(chat_id, reply_placeholders)
 
 # ======================= Приветствие =======================
 async def _send_welcome(chat_id: int):
@@ -307,69 +290,69 @@ async def _send_welcome(chat_id: int):
     welcome_msgs[chat_id].add(sent.message_id)
     placeholder = await bot.send_message(chat_id, " ", reply_markup=reply_keyboard)
     reply_placeholders[chat_id].add(placeholder.message_id)
+    CURRENT_VIEW[chat_id] = "welcome"
 
 # ======================= /help =======================
 @dp.message(Command("help"))
 async def help_handler(message: types.Message):
     chat_id = message.chat.id
-
-    async def delayed_delete():
-        await asyncio.sleep(1.5)
+    # защита от дубля
+    if CURRENT_VIEW.get(chat_id) == "help":
         try: await bot.delete_message(chat_id, message.message_id)
         except: pass
-    asyncio.create_task(delayed_delete())
+        return
+
+    # удалим команду юзера с небольшой задержкой
+    asyncio.create_task(asyncio.sleep(2.5))
+    try: asyncio.create_task(bot.delete_message(chat_id, message.message_id))
+    except: pass
 
     await _clear_welcomes(chat_id)
-    for mid in list(menu_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    menu_bot_msgs[chat_id].clear()
+    # удаляем прошлые help перед отправкой нового
+    await _purge_set(chat_id, help_bot_msgs)
+    # на всякий случай уберём меню
+    await _purge_set(chat_id, menu_bot_msgs)
 
     sent = await send_card(chat_id, HELP_TEXT, main_keyboard)
     help_bot_msgs[chat_id].add(sent.message_id)
+    CURRENT_VIEW[chat_id] = "help"
 
 # ======================= /menu =======================
 @dp.message(Command("menu"))
 async def menu_handler(message: types.Message):
     chat_id = message.chat.id
-
-    async def delayed_delete():
-        await asyncio.sleep(1.0)
+    if CURRENT_VIEW.get(chat_id) == "menu":
         try: await bot.delete_message(chat_id, message.message_id)
         except: pass
-    asyncio.create_task(delayed_delete())
+        return
+
+    try: asyncio.create_task(bot.delete_message(chat_id, message.message_id))
+    except: pass
 
     await _clear_welcomes(chat_id)
-    for mid in list(help_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    help_bot_msgs[chat_id].clear()
+    # удаляем прошлые menu перед отправкой нового
+    await _purge_set(chat_id, menu_bot_msgs)
+    # и help на всякий случай
+    await _purge_set(chat_id, help_bot_msgs)
 
-    sent = await send_card(chat_id, section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"]), menu_keyboard)
+    text = section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"])
+    sent = await send_card(chat_id, text, menu_keyboard)
     menu_bot_msgs[chat_id].add(sent.message_id)
+    CURRENT_VIEW[chat_id] = "menu"
 
 # ======================= /start =======================
 @dp.message(Command(commands=["start", "старт"]))
 async def start_handler(message: types.Message):
     chat_id = message.chat.id
 
-    async def delayed_delete():
-        await asyncio.sleep(1.0)
-        try: await bot.delete_message(chat_id, message.message_id)
-        except: pass
-    asyncio.create_task(delayed_delete())
+    try: asyncio.create_task(bot.delete_message(chat_id, message.message_id))
+    except: pass
 
-    for mid in list(help_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    help_bot_msgs[chat_id].clear()
-
-    for mid in list(menu_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    menu_bot_msgs[chat_id].clear()
-
+    # чистим все предыдущие карточки
+    await _purge_set(chat_id, help_bot_msgs)
+    await _purge_set(chat_id, menu_bot_msgs)
     await _clear_welcomes(chat_id)
+
     await _send_welcome(chat_id)
 
 # ======================= Кнопка "Запуск бота" =======================
@@ -379,53 +362,59 @@ async def reply_start_handler(message: types.Message):
     try:
         await bot.delete_message(chat_id, message.message_id)
     except: pass
-    sent = await send_card(chat_id, WELCOME_TEXT, main_keyboard)
-    welcome_msgs[chat_id].add(sent.message_id)
+    await _purge_set(chat_id, help_bot_msgs)
+    await _purge_set(chat_id, menu_bot_msgs)
+    await _clear_welcomes(chat_id)
+    await _send_welcome(chat_id)
 
 # ======================= Колбэки =======================
 @dp.callback_query()
 async def callback_handler(cb: types.CallbackQuery):
     data = cb.data
     msg = cb.message
+    chat_id = msg.chat.id
 
     if data == "studclubs":
         await edit_card(msg, section_wrap("🎭 Студклубы", ["Выбери клуб ниже 👇"]), studclubs_keyboard)
+        CURRENT_VIEW[chat_id] = "studclubs"
     elif data == "menu":
-        await edit_card(msg, section_wrap("📖 Меню", ["Выбери нужный раздел 👇"]), menu_keyboard)
+        if CURRENT_VIEW.get(chat_id) != "menu":
+            await edit_card(msg, section_wrap("📖 Меню", ["Выбери нужный раздел 👇"]), menu_keyboard)
+            CURRENT_VIEW[chat_id] = "menu"
     elif data == "back_main":
         await edit_card(msg, WELCOME_TEXT, main_keyboard)
+        CURRENT_VIEW[chat_id] = "welcome"
 
     elif data == "laundry":
-        await edit_card(msg, LAUNDRY_TEXT_HTML, menu_keyboard)
+        await edit_card(msg, LAUNDRY_TEXT_HTML, menu_keyboard); CURRENT_VIEW[chat_id] = "laundry"
     elif data == "water":
-        await edit_card(msg, WATER_TEXT_HTML, menu_keyboard)
+        await edit_card(msg, WATER_TEXT_HTML, menu_keyboard); CURRENT_VIEW[chat_id] = "water"
     elif data == "lost":
-        await edit_card(msg, LOST_TEXT_HTML, menu_keyboard)
-        
+        await edit_card(msg, LOST_TEXT_HTML, menu_keyboard); CURRENT_VIEW[chat_id] = "lost"
 
     elif data == "case_club":
-        await edit_card(msg, CASE_CLUB_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, CASE_CLUB_TEXT_HTML, studclubs_keyboard); CURRENT_VIEW[chat_id] = "case_club"
     elif data == "kbk":
-        await edit_card(msg, KBK_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, KBK_TEXT_HTML, studclubs_keyboard); CURRENT_VIEW[chat_id] = "kbk"
     elif data == "falcon":
-        await edit_card(msg, FALCON_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, FALCON_TEXT_HTML, studclubs_keyboard); CURRENT_VIEW[chat_id] = "falcon"
     elif data == "MCW":
-        await edit_card(msg, MCW_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, MCW_TEXT_HTML, studclubs_keyboard); CURRENT_VIEW[chat_id] = "MCW"
     elif data == "golf":
-        await edit_card(msg, GOLF_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, GOLF_TEXT_HTML, studclubs_keyboard); CURRENT_VIEW[chat_id] = "golf"
     elif data == "sport_culture":
-        await edit_card(msg, SPORT_CULTURE_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, SPORT_CULTURE_TEXT_HTML, studclubs_keyboard); CURRENT_VIEW[chat_id] = "sport_culture"
 
     elif data == "contacts":
-        await edit_card(msg, section_wrap("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard)
+        await edit_card(msg, section_wrap("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard); CURRENT_VIEW[chat_id] = "contacts"
     elif data == "contact_admin":
-        await edit_card(msg, CONTACTS_ADMIN_TEXT, contacts_keyboard)
+        await edit_card(msg, CONTACTS_ADMIN_TEXT, contacts_keyboard); CURRENT_VIEW[chat_id] = "contact_admin"
     elif data == "contact_teachers":
-        await edit_card(msg, CONTACTS_TEACHERS_TEXT_HTML, contacts_keyboard)
+        await edit_card(msg, CONTACTS_TEACHERS_TEXT_HTML, contacts_keyboard); CURRENT_VIEW[chat_id] = "contact_teachers"
     elif data == "contact_curators":
-        await edit_card(msg, CONTACTS_CURATORS_TEXT_HTML, contacts_keyboard)
+        await edit_card(msg, CONTACTS_CURATORS_TEXT_HTML, contacts_keyboard); CURRENT_VIEW[chat_id] = "contact_curators"
 
-
+    await cb.answer("Обновлено ✅", show_alert=False)
 
 # ======================= Запуск =======================
 async def main():
@@ -435,10 +424,10 @@ async def main():
             types.BotCommand(command="menu",  description="Открыть меню"),
             types.BotCommand(command="help",  description="Помощь"),
         ])
-    except: pass
+    except Exception:
+        pass
 
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-#vbdriuohgiudhgiudr
