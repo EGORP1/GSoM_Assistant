@@ -1,84 +1,30 @@
 import os
 import re
-import json
 import asyncio
 import logging
-from pathlib import Path
 from typing import List, Tuple, Optional, Sequence, Dict
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.enums import ChatAction
 from aiogram.types import (
-    InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton
+    InlineKeyboardButton, InlineKeyboardMarkup
 )
 
-# ======================= Конфиг =======================
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# ======================= БАЗОВЫЕ НАСТРОЙКИ =======================
+logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("BOT_TOKEN", "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs").strip()
 if not TOKEN or ":" not in TOKEN:
-    raise RuntimeError("Переменная окружения BOT_TOKEN отсутствует или некорректна.")
+    raise RuntimeError("Некорректный токен Telegram бота.")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# через сколько удалять сообщение пользователя с командой
-DELETE_USER_CMD_AFTER = 2.5
+DELETE_COMMAND_AFTER = 2.5  # через сколько удалять сообщение с командой пользователя
 
-# файл, где храним id сообщений, отправленных ЭТИМ ботом (на случай рестарта)
-REG_PATH = Path("bot_messages.json")
-
-# ======================= Персистентный реестр сообщений =======================
-# структура файла: {"<chat_id>":[msg_id, ...], ...}
-def _load_registry() -> Dict[int, list]:
-    if REG_PATH.exists():
-        try:
-            raw = json.loads(REG_PATH.read_text(encoding="utf-8"))
-            return {int(k): [int(x) for x in v] for k, v in raw.items()}
-        except Exception as e:
-            logging.warning("Не смог прочитать реестр сообщений, начинаю с пустого: %r", e)
-    return {}
-
-def _save_registry(reg: Dict[int, list]):
-    try:
-        REG_PATH.write_text(json.dumps(reg, ensure_ascii=False), encoding="utf-8")
-    except Exception as e:
-        logging.warning("Не смог сохранить реестр сообщений: %r", e)
-
-MSG_REG: Dict[int, list] = _load_registry()
-
-def _track_bot_message(msg: Optional[types.Message]):
-    if not msg:
-        return
-    chat_id = msg.chat.id
-    MSG_REG.setdefault(chat_id, [])
-    MSG_REG[chat_id].append(msg.message_id)
-    _save_registry(MSG_REG)
-
-async def purge_chat_messages(chat_id: int):
-    """Удаляем все сообщения, которые (по нашему реестру) отправлял этот бот в чате."""
-    ids = MSG_REG.get(chat_id, [])
-    if not ids:
-        return
-    # удаляем по возрастанию — порядок не критичен
-    for mid in sorted(ids):
-        try:
-            await bot.delete_message(chat_id, mid)
-        except Exception as e:
-            # если сообщение чужого бота/слишком старое — Telegram не даст удалить
-            logging.warning("Не удалось удалить msg_id=%s в chat_id=%s: %r", mid, chat_id, e)
-    MSG_REG[chat_id] = []
-    _save_registry(MSG_REG)
-
-# ======================= Reply-клавиатура =======================
-REPLY_START_BTN = "Запуск бота"
-reply_keyboard = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=REPLY_START_BTN)]],
-    resize_keyboard=True,
-    one_time_keyboard=False
-)
+# Единственная «живая» карточка на чат: chat_id -> message_id
+LAST_MSG: Dict[int, int] = {}
 
 # ======================= ТОНКИЙ ЮНИКОД =======================
 _THIN_MAP = str.maketrans({
@@ -95,21 +41,17 @@ _HTML_TOKEN_RE = re.compile(r"(<[^>]+>)")
 def _thin_plain(text: str) -> str:
     return text.translate(_THIN_MAP)
 
-def to_thin(text: str, html_safe: bool = True, airy_cyrillic: bool = False) -> str:
+def to_thin(text: str, html_safe: bool = True) -> str:
     if not html_safe:
-        out = _thin_plain(text)
-    else:
-        parts = _HTML_TOKEN_RE.split(text)
-        for i, part in enumerate(parts):
-            if not part or part.startswith("<"):
-                continue
-            parts[i] = _thin_plain(part)
-        out = "".join(parts)
-    if airy_cyrillic:
-        out = re.sub(r'([А-Яа-яЁё])(?=([А-Яа-яЁё]))', r'\1\u200A', out)
-    return out
+        return _thin_plain(text)
+    parts = _HTML_TOKEN_RE.split(text)
+    for i, part in enumerate(parts):
+        if not part or part.startswith("<"):
+            continue
+        parts[i] = _thin_plain(part)
+    return "".join(parts)
 
-# ======================= UI-утилиты =======================
+# ======================= ДИЗАЙН-УТИЛИТЫ =======================
 def section(title: str, lines: Sequence[str], footer: Optional[str] = None) -> str:
     body = "\n".join(f"• {line}" for line in lines)
     foot = f"\n\n{footer}" if footer else ""
@@ -128,30 +70,56 @@ def grid(buttons: List[Tuple[str, str, str]], per_row: int = 2) -> InlineKeyboar
         rows.append(row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-async def think(chat_id: int, delay: float = 0.25):
+async def think(chat_id: int, delay: float = 0.2):
     await bot.send_chat_action(chat_id, ChatAction.TYPING)
     await asyncio.sleep(delay)
 
-async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None) -> types.Message:
+async def send_or_edit_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
+    """
+    Держим на чате только ОДНУ карточку.
+    Если есть LAST_MSG — редактируем её.
+    Если редактировать нельзя — удаляем и отправляем новую.
+    """
     await think(chat_id)
-    text = to_thin(text, html_safe=True, airy_cyrillic=False)
-    msg = await bot.send_message(
-        chat_id, text,
+    text = to_thin(text, html_safe=True)
+
+    msg_id = LAST_MSG.get(chat_id)
+    if msg_id:
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=msg_id,
+                text=text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=kb
+            )
+            return
+        except Exception:
+            # не смогли отредактировать (старое, удалено и т.п.) — пробуем снести и отправить заново
+            try:
+                await bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+
+    # отправляем новую карточку и запоминаем её id
+    new_msg = await bot.send_message(
+        chat_id=chat_id,
+        text=text,
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=kb
     )
-    _track_bot_message(msg)
-    return msg
+    LAST_MSG[chat_id] = new_msg.message_id
 
-async def schedule_delete(chat_id: int, message_id: int, delay: float):
+async def schedule_delete(chat_id: int, message_id: int, delay: float = DELETE_COMMAND_AFTER):
     try:
         await asyncio.sleep(delay)
         await bot.delete_message(chat_id, message_id)
-    except Exception as e:
-        logging.info("Не удалось удалить пользовательское сообщение %s: %r", message_id, e)
+    except Exception:
+        pass
 
-# ======================= Тексты (iOS-friendly <a>) =======================
+# ======================= ТЕКСТЫ (iOS-friendly <a>) =======================
 WELCOME_TEXT = (
     "<b>Привет! 👋</b>\n\n"
     "Я твой ассистент в СПбГУ.\n\n"
@@ -164,7 +132,7 @@ LAUNDRY_TEXT_HTML = (
     "2) <a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
     "3) <a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
     "4) <a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit\">Четвертый корпус</a>\n"
-    "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6кzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
+    "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
     "6) <a href=\"https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing\">Шестой корпус</a>\n"
     "7) <a href=\"https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk\">Седьмой корпус</a>\n"
     "8) <a href=\"https://docs.google.com/spreadsheets/d/1EBvaLpxAK5r91yc-jaCa8bj8iLumwJvGFjTDlEArRLA/edit?usp=sharing\">Восьмой корпус</a>\n"
@@ -193,6 +161,16 @@ CASE_CLUB_TEXT_HTML = section_wrap(
     ]
 )
 
+KBK_TEXT_HTML = (
+    "🎤 <b>КБК</b> — это уникальный всероссийский проект для обмена знаниями о Китае, "
+    "созданный студентами и молодыми профессионалами со всей России.\n\n"
+    "Он объединяет массу актуальных форматов: от нескучных лекций и мастер-классов "
+    "до полезных карьерных консультаций и ярких творческих выступлений.\n\n"
+    "🌐 <a href='https://forum-cbc.ru/'>Сайт</a>\n"
+    "📘 <a href='https://vk.com/forumcbc'>ВКонтакте</a>\n"
+    "📲 <a href='https://t.me/forumcbc'>Telegram</a>"
+)
+
 FALCON_TEXT_HTML = section_wrap(
     "💼 Falcon Business Club",
     [
@@ -205,6 +183,8 @@ MCW_TEXT_HTML = section_wrap(
     "👫 MCW",
     [
         "Management Career Week — главное карьерное мероприятие ВШМ СПбГУ",
+        "В рамках недели проходят разные форматы на актуальные темы.",
+        "Контакты:",
         "📘 <a href='https://vk.com/mcwgsom'>ВКонтакте</a>",
         "📲 <a href='https://t.me/mcwgsom'>Telegram</a>"
     ]
@@ -261,13 +241,12 @@ HELP_TEXT = section_wrap(
     [
         "Навигация через кнопки под сообщениями.",
         "Команды: /start — перезапуск, /menu — открыть меню, /help — помощь.",
-        "Reply-кнопка «Запуск бота» — быстрый возврат к началу.",
         "Ссылки в карточках кликабельны.",
         "Если что-то не работает — <a href='https://t.me/MeEncantaNegociar'>Telegram</a>"
     ]
 )
 
-# ======================= Инлайн-меню =======================
+# ======================= ИНЛАЙН-МЕНЮ =======================
 main_keyboard = grid([
     ("📚 TimeTable", "url", "https://timetable.spbu.ru/GSOM"),
     ("🎭 Студклубы", "cb",  "studclubs"),
@@ -299,212 +278,77 @@ contacts_keyboard = grid([
     ("⬅️ Назад",          "cb", "back_main"),
 ], per_row=2)
 
-# ======================= Эксклюзивная карточка =======================
-# запоминаем «последнюю карточку» в чате, чтобы редактировать вместо отправки новой
-LAST_MSG: Dict[int, int] = {}
-
-async def show_card_exclusive(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
-    """Сначала пытаемся отредактировать последнюю карточку. Если не вышло — чистим свои и шлём новую."""
-    last_id = LAST_MSG.get(chat_id)
-    if last_id:
-        try:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=last_id,
-                text=to_thin(text, html_safe=True),
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-                reply_markup=kb
-            )
-            return
-        except Exception as e:
-            logging.info("edit_message_text не удалось (будем отправлять новую): %r", e)
-
-    await purge_chat_messages(chat_id)
-    msg = await send_card(chat_id, text, kb)
-    LAST_MSG[chat_id] = msg.message_id
-
-# ======================= Команды =======================
+# ======================= КОМАНДЫ =======================
 @dp.message(Command("help"))
 async def help_handler(message: types.Message):
-    asyncio.create_task(schedule_delete(message.chat.id, message.message_id, DELETE_USER_CMD_AFTER))
-    await show_card_exclusive(message.chat.id, HELP_TEXT, main_keyboard)
+    asyncio.create_task(schedule_delete(message.chat.id, message.message_id))
+    await send_or_edit_card(message.chat.id, HELP_TEXT, main_keyboard)
 
 @dp.message(Command("menu"))
 async def menu_handler(message: types.Message):
-    asyncio.create_task(schedule_delete(message.chat.id, message.message_id, DELETE_USER_CMD_AFTER))
-    await show_card_exclusive(message.chat.id, section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"]), menu_keyboard)
+    asyncio.create_task(schedule_delete(message.chat.id, message.message_id))
+    text = section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"])
+    await send_or_edit_card(message.chat.id, text, menu_keyboard)
 
 @dp.message(Command(commands=["start", "старт"]))
 async def start_handler(message: types.Message):
-    asyncio.create_task(schedule_delete(message.chat.id, message.message_id, DELETE_USER_CMD_AFTER))
-    await show_card_exclusive(message.chat.id, WELCOME_TEXT, main_keyboard)
-    # отдельный плейсхолдер для reply-клавиатуры
-    placeholder = await bot.send_message(message.chat.id, " ", reply_markup=reply_keyboard)
-    _track_bot_message(placeholder)
+    asyncio.create_task(schedule_delete(message.chat.id, message.message_id))
+    await send_or_edit_card(message.chat.id, WELCOME_TEXT, main_keyboard)
 
-# ======================= Кнопка "Запуск бота" =======================
-@dp.message(F.text == REPLY_START_BTN)
-async def reply_start_handler(message: types.Message):
-    asyncio.create_task(schedule_delete(message.chat.id, message.message_id, 0.1))
-    await show_card_exclusive(message.chat.id, WELCOME_TEXT, main_keyboard)
-    placeholder = await bot.send_message(message.chat.id, " ", reply_markup=reply_keyboard)
-    _track_bot_message(placeholder)
-
-# ======================= Колбэки =======================
+# ======================= КОЛБЭКИ =======================
 @dp.callback_query()
 async def callback_handler(cb: types.CallbackQuery):
     data = cb.data
-    msg = cb.message
+    chat_id = cb.message.chat.id
 
     if data == "studclubs":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(section_wrap("🎭 Студклубы", ["Выбери клуб ниже 👇"])),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=studclubs_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, section_wrap("🎭 Студклубы", ["Выбери клуб ниже 👇"]), studclubs_keyboard)
     elif data == "menu":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(section_wrap("📖 Меню", ["Выбери нужный раздел 👇"])),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=menu_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, section_wrap("📖 Меню", ["Выбери нужный раздел 👇"]), menu_keyboard)
     elif data == "back_main":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(WELCOME_TEXT),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=main_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, WELCOME_TEXT, main_keyboard)
 
     elif data == "laundry":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(LAUNDRY_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=menu_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, LAUNDRY_TEXT_HTML, menu_keyboard)
     elif data == "water":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(WATER_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=menu_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, WATER_TEXT_HTML, menu_keyboard)
     elif data == "lost":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(LOST_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=menu_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, LOST_TEXT_HTML, menu_keyboard)
 
     elif data == "case_club":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(CASE_CLUB_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=studclubs_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, CASE_CLUB_TEXT_HTML, studclubs_keyboard)
     elif data == "kbk":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(KBK_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=studclubs_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, KBK_TEXT_HTML, studclubs_keyboard)
     elif data == "falcon":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(FALCON_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=studclubs_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, FALCON_TEXT_HTML, studclubs_keyboard)
     elif data == "MCW":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(MCW_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=studclubs_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, MCW_TEXT_HTML, studclubs_keyboard)
     elif data == "golf":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(GOLF_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=studclubs_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, GOLF_TEXT_HTML, studclubs_keyboard)
     elif data == "sport_culture":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(SPORT_CULTURE_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=studclubs_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, SPORT_CULTURE_TEXT_HTML, studclubs_keyboard)
 
     elif data == "contacts":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(section_wrap("📞 Контакты", ["Выбери категорию ниже 👇"])),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=contacts_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, section_wrap("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard)
     elif data == "contact_admin":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(CONTACTS_ADMIN_TEXT),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=contacts_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, CONTACTS_ADMIN_TEXT, contacts_keyboard)
     elif data == "contact_teachers":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(CONTACTS_TEACHERS_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=contacts_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, CONTACTS_TEACHERS_TEXT_HTML, contacts_keyboard)
     elif data == "contact_curators":
-        await bot.edit_message_text(
-            chat_id=msg.chat.id, message_id=msg.message_id,
-            text=to_thin(CONTACTS_CURATORS_TEXT_HTML),
-            parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=contacts_keyboard
-        )
-        LAST_MSG[msg.chat.id] = msg.message_id
+        await send_or_edit_card(chat_id, CONTACTS_CURATORS_TEXT_HTML, contacts_keyboard)
 
-    await cb.answer()
+    await cb.answer("Обновлено ✅", show_alert=False)
 
-# ======================= Запуск =======================
+# ======================= ЗАПУСК =======================
 async def main():
-    me = await bot.get_me()
-    logging.info("Запущен бот: @%s (id=%s)", me.username, me.id)
-
     try:
         await bot.set_my_commands([
             types.BotCommand(command="start", description="Запуск / перезапуск"),
             types.BotCommand(command="menu",  description="Открыть меню"),
             types.BotCommand(command="help",  description="Помощь"),
         ])
-    except Exception as e:
-        logging.info("set_my_commands: %r", e)
-
+    except Exception:
+        pass
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
