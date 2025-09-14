@@ -314,7 +314,7 @@ async def help_handler(message: types.Message):
     chat_id = message.chat.id
 
     async def delayed_delete():
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(1.5)
         try: await bot.delete_message(chat_id, message.message_id)
         except: pass
     asyncio.create_task(delayed_delete())
