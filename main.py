@@ -410,7 +410,7 @@ async def callback_handler(cb: types.CallbackQuery):
     elif data == "contact_curators":
         await edit_card(msg, CONTACTS_CURATORS_TEXT_HTML, contacts_keyboard)
 
-    await cb.answer("Обновлено ✅", show_alert=False)
+
 
 # ======================= Запуск =======================
 async def main():
