@@ -2,29 +2,43 @@ import os
 import re
 import asyncio
 import logging
-from typing import List, Tuple, Optional, Sequence, Dict
+from collections import defaultdict
+from typing import List, Tuple, Optional, Sequence
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.enums import ChatAction
 from aiogram.types import (
-    InlineKeyboardButton, InlineKeyboardMarkup
+    InlineKeyboardButton, InlineKeyboardMarkup,
+    ReplyKeyboardMarkup, KeyboardButton
 )
 
-# ======================= БАЗОВЫЕ НАСТРОЙКИ =======================
-logging.basicConfig(level=logging.INFO)
-
-TOKEN = os.getenv("BOT_TOKEN", "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs").strip()
+# ====== Токен ======
+TOKEN = "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs"
 if not TOKEN or ":" not in TOKEN:
     raise RuntimeError("Некорректный токен Telegram бота.")
 
+logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-DELETE_COMMAND_AFTER = 2.5  # через сколько удалять сообщение с командой пользователя
+# ======================= Reply-клавиатура =======================
+REPLY_START_BTN = "Запуск бота"
+reply_keyboard = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text=REPLY_START_BTN)]],
+    resize_keyboard=True,
+    one_time_keyboard=False,
+    input_field_placeholder=""
+)
 
-# Единственная «живая» карточка на чат: chat_id -> message_id
-LAST_MSG: Dict[int, int] = {}
+# ==== Трекинг сообщений для последующей очистки ====
+help_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
+menu_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
+welcome_msgs:   defaultdict[int, set[int]] = defaultdict(set)
+reply_placeholders: defaultdict[int, set[int]] = defaultdict(set)
+
+all_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
+
 
 # ======================= ТОНКИЙ ЮНИКОД =======================
 _THIN_MAP = str.maketrans({
@@ -41,15 +55,19 @@ _HTML_TOKEN_RE = re.compile(r"(<[^>]+>)")
 def _thin_plain(text: str) -> str:
     return text.translate(_THIN_MAP)
 
-def to_thin(text: str, html_safe: bool = True) -> str:
+def to_thin(text: str, html_safe: bool = True, airy_cyrillic: bool = False) -> str:
     if not html_safe:
-        return _thin_plain(text)
-    parts = _HTML_TOKEN_RE.split(text)
-    for i, part in enumerate(parts):
-        if not part or part.startswith("<"):
-            continue
-        parts[i] = _thin_plain(part)
-    return "".join(parts)
+        out = _thin_plain(text)
+    else:
+        parts = _HTML_TOKEN_RE.split(text)
+        for i, part in enumerate(parts):
+            if not part or part.startswith("<"):
+                continue
+            parts[i] = _thin_plain(part)
+        out = "".join(parts)
+    if airy_cyrillic:
+        out = re.sub(r'([А-Яа-яЁё])(?=([А-Яа-яЁё]))', r'\1\u200A', out)
+    return out
 
 # ======================= ДИЗАЙН-УТИЛИТЫ =======================
 def section(title: str, lines: Sequence[str], footer: Optional[str] = None) -> str:
@@ -70,56 +88,43 @@ def grid(buttons: List[Tuple[str, str, str]], per_row: int = 2) -> InlineKeyboar
         rows.append(row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-async def think(chat_id: int, delay: float = 0.2):
+async def think(chat_id: int, delay: float = 0.45):
     await bot.send_chat_action(chat_id, ChatAction.TYPING)
     await asyncio.sleep(delay)
 
-async def send_or_edit_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
-    """
-    Держим на чате только ОДНУ карточку.
-    Если есть LAST_MSG — редактируем её.
-    Если редактировать нельзя — удаляем и отправляем новую.
-    """
+async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
     await think(chat_id)
-    text = to_thin(text, html_safe=True)
-
-    msg_id = LAST_MSG.get(chat_id)
-    if msg_id:
-        try:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=msg_id,
-                text=text,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-                reply_markup=kb
-            )
-            return
-        except Exception:
-            # не смогли отредактировать (старое, удалено и т.п.) — пробуем снести и отправить заново
-            try:
-                await bot.delete_message(chat_id, msg_id)
-            except Exception:
-                pass
-
-    # отправляем новую карточку и запоминаем её id
-    new_msg = await bot.send_message(
-        chat_id=chat_id,
-        text=text,
+    text = to_thin(text, html_safe=True, airy_cyrillic=False)
+    msg = await bot.send_message(
+        chat_id, text,
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=kb
     )
-    LAST_MSG[chat_id] = new_msg.message_id
+    all_bot_msgs[chat_id].add(msg.message_id)
+    return msg
 
-async def schedule_delete(chat_id: int, message_id: int, delay: float = DELETE_COMMAND_AFTER):
-    try:
-        await asyncio.sleep(delay)
-        await bot.delete_message(chat_id, message_id)
-    except Exception:
-        pass
+async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMarkup] = None):
+    await asyncio.sleep(0.15)
+    text = to_thin(text, html_safe=True, airy_cyrillic=False)
+    return await msg.edit_text(
+        text,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=kb
+    )
 
-# ======================= ТЕКСТЫ (iOS-friendly <a>) =======================
+async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMarkup] = None):
+    await asyncio.sleep(0.15)
+    text = to_thin(text, html_safe=True, airy_cyrillic=False)  # << вариант B
+    return await msg.edit_text(
+        text,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=kb
+    )
+
+# ======================= ТЕКСТЫ =======================
 WELCOME_TEXT = (
     "<b>Привет! 👋</b>\n\n"
     "Я твой ассистент в СПбГУ.\n\n"
@@ -128,28 +133,28 @@ WELCOME_TEXT = (
 
 LAUNDRY_TEXT_HTML = (
     "🧺 <b>Прачка СПбГУ</b>\n\n"
-    "1) <a href=\"https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing\">Первый корпус</a>\n"
-    "2) <a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
-    "3) <a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
-    "4) <a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit\">Четвертый корпус</a>\n"
-    "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
-    "6) <a href=\"https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing\">Шестой корпус</a>\n"
-    "7) <a href=\"https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk\">Седьмой корпус</a>\n"
-    "8) <a href=\"https://docs.google.com/spreadsheets/d/1EBvaLpxAK5r91yc-jaCa8bj8iLumwJvGFjTDlEArRLA/edit?usp=sharing\">Восьмой корпус</a>\n"
-    "9) <a href=\"https://docs.google.com/spreadsheets/d/1wGxLQLF5X22JEqMlq0mSVXMyrMQslXbemo-Z8YQcSS8/edit?usp=sharing\">Девятый корпус</a>"
+    "<a href=\"https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing\">Первый корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit\">Четвертый корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing\">Шестой корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk\">Седьмой корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/1EBvaLpxAK5r91yc-jaCa8bj8iLumwJvGFjTDlEArRLA/edit?usp=sharing\">Восьмой корпус</a>\n"
+    "<a href=\"https://docs.google.com/spreadsheets/d/1wGxLQLF5X22JEqMlq0mSVXMyrMQslXbemo-Z8YQcSS8/edit?usp=sharing\">Девятый корпус</a>"
 )
 
 def section_wrap(title, items):
     return section(title, items)
 
-WATER_TEXT_HTML = section_wrap("🚰 Вода", ["Пока пишите по номеру:", "📞 +7 933 341-73-75"])
+WATER_TEXT_HTML = section_wrap("🚰 Вода", ["Пока пишите по номеру:", "<b>📞 +7 933 341-73-75</b>"])
 
 LOST_TEXT_HTML = section_wrap(
     "🔎 Потеряшки СПбГУ",
     [
         "Группа для поиска потерянных вещей и возврата владельцам.",
         "Если что-то потерял или нашёл — напиши сюда!",
-        "📲 <a href='https://t.me/+CzTrsVUbavM5YzNi'>Перейти в Telegram-группу</a>"
+        "📲 <a href='https://t.me/+CzTrsVUbavM5YzNi'><b>Перейти в Telegram-группу</b></a>"
     ]
 )
 
@@ -157,7 +162,7 @@ CASE_CLUB_TEXT_HTML = section_wrap(
     "📊 GSOM SPbU Case Club",
     [
         "Студклуб для развития навыков решения кейсов и консалтинга.",
-        "📲 <a href='https://t.me/gsomspbucaseclub'>Telegram</a>"
+        "📲 <a href='https://t.me/gsomspbucaseclub'><b>Telegram</b></a>"
     ]
 )
 
@@ -166,16 +171,21 @@ KBK_TEXT_HTML = (
     "созданный студентами и молодыми профессионалами со всей России.\n\n"
     "Он объединяет массу актуальных форматов: от нескучных лекций и мастер-классов "
     "до полезных карьерных консультаций и ярких творческих выступлений.\n\n"
-    "🌐 <a href='https://forum-cbc.ru/'>Сайт</a>\n"
-    "📘 <a href='https://vk.com/forumcbc'>ВКонтакте</a>\n"
-    "📲 <a href='https://t.me/forumcbc'>Telegram</a>"
+    "Погрузиться в атмосферу Китая теперь можно и в онлайн-режиме — через наш эксклюзивный контент "
+    "и медиа-шоу, которое захватывает с первой серии. С нами ты получишь экспертные знания, "
+    "полезные связи и крутые карьерные возможности.\n\n"
+    "Следи за КБК из любой точки нашей страны и готовься к кульминации сезона — масштабному форуму, "
+    "который пройдёт в стенах лучшей бизнес-школы России ВШМ СПбГУ уже этой весной!\n\n"
+    "🌐 <a href='https://forum-cbc.ru/'><b>Сайт</b></a>\n"
+    "📘 <a href='https://vk.com/forumcbc'><b>ВКонтакте</b></a>\n"
+    "📲 <a href='https://t.me/forumcbc'><b>Telegram</b></a>"
 )
 
 FALCON_TEXT_HTML = section_wrap(
     "💼 Falcon Business Club",
     [
         "Предпринимательство: бизнес-игры, мастер-классы, менторы и гранты.",
-        "📲 <a href='https://t.me/falcongsom'>Telegram</a>"
+        "📲 <a href='https://t.me/falcongsom'><b>Telegram</b></a>"
     ]
 )
 
@@ -183,10 +193,11 @@ MCW_TEXT_HTML = section_wrap(
     "👫 MCW",
     [
         "Management Career Week — главное карьерное мероприятие ВШМ СПбГУ",
-        "В рамках недели проходят разные форматы на актуальные темы.",
+        "В рамках карьерной недели проходят мероприятия различных форматов на актуальные темы профессионального мира для самых амбициозных",
+        "студентов.",
         "Контакты:",
-        "📘 <a href='https://vk.com/mcwgsom'>ВКонтакте</a>",
-        "📲 <a href='https://t.me/mcwgsom'>Telegram</a>"
+        "📘 <a href='https://vk.com/mcwgsom'><b>ВКонтакте</b></a>",
+        "📲 <a href='https://t.me/mcwgsom'><b>Telegram</b></a>"
     ]
 )
 
@@ -195,7 +206,7 @@ GOLF_TEXT_HTML = section_wrap(
     [
         "Студенческое сообщество гольфистов СПбГУ.",
         "Контакты: Дима @dmetlyaev; Света @Ant_Svetlana",
-        "📲 <a href='https://t.me/GSOM_GOLFCLUB'>Telegram</a>"
+        "📲 <a href='https://t.me/GSOM_GOLFCLUB'><b>Telegram</b></a>"
     ]
 )
 
@@ -203,50 +214,51 @@ SPORT_CULTURE_TEXT_HTML = section_wrap(
     "⚽ Sport and Culture",
     [
         "Спорт и культура: турниры, концерты, мероприятия.",
-        "📲 <a href='https://t.me/gsomsport'>Telegram</a>"
+        "📲 <a href='https://t.me/gsomsport'><b>Telegram</b></a>"
     ]
 )
 
 CONTACTS_ADMIN_TEXT = section_wrap(
     "🏛 Администрация СПбГУ",
     [
-        "Приёмная директора ВШМ СПбГУ — office@gsom.spbu.ru",
-        "Бакалавриат — v.mishuchkov@gsom.spbu.ru",
-        "Учебный отдел — y.revodko@gsom.spbu.ru",
-        "Международный отдел — exchange@gsom.spbu.ru",
-        "Центр карьер — e.troyanova@gsom.spbu.ru",
-        "IT-поддержка — support@gsom.spbu.ru"
+        "Приёмная директора ВШМ СПбГУ — <b>office@gsom.spbu.ru</b>",
+        "Бакалавриат — <b>v.mishuchkov@gsom.spbu.ru</b>",
+        "Учебный отдел — <b>y.revodko@gsom.spbu.ru</b>",
+        "Международный отдел — <b>exchange@gsom.spbu.ru</b>",
+        "Центр карьер — <b>e.troyanova@gsom.spbu.ru</b>",
+        "IT-поддержка — <b>support@gsom.spbu.ru</b>"
     ]
 )
 
 CONTACTS_TEACHERS_TEXT_HTML = section_wrap(
     "👩‍🏫 Преподаватели СПбГУ",
     [
-        "Ирина Владимировна Марченко — i.marchencko@gsom.spbu.ru",
-        "Татьяна Николаевна Клемина — klemina@gsom.spbu.ru",
-        "Ирина Анатольевна Лешева — lesheva@gsom.spbu.ru",
-        "Елена Вячеславовна Воронко — e.voronko@gsom.spbu.ru",
-        "Сергей Игоревич Кирюков — kiryukov@gsom.spbu.ru",
-        "Александр Федорович Денисов — denisov@gsom.spbu.ru",
-        "Анастасия Алексеевна Голубева — golubeva@gsom.spbu.ru",
-        "Татьяна Сергеевна Станко — t.stanko@gsom.spbu.ru",
-        "Елена Моисеевна Рогова — e.rogova@gsom.spbu.ru"
+        "Ирина Владимировна Марченко — <b>i.marchencko@gsom.spbu.ru</b>",
+        "Татьяна Николаевна Клемина — <b>klemina@gsom.spbu.ru</b>",
+        "Ирина Анатольевна Лешева — <b>lesheva@gsom.spbu.ru</b>",
+        "Елена Вячеславовна Воронко — <b>e.voronko@gsom.spbu.ru</b>",
+        "Сергей Игоревич Кирюков — <b>kiryukov@gsom.spbu.ru</b>",
+        "Александр Федорович Денисов — <b>denisov@gsom.spbu.ru</b>",
+        "Анастасия Алексеевна Голубева — <b>golubeva@gsom.spbu.ru</b>",
+        "Татьяна Сергеевна Станко — <b>t.stanko@gsom.spbu.ru</b>",
+        "Елена Моисеевна Рогова — <b>e.rogova@gsom.spbu.ru</b>"
     ]
 )
 
-CONTACTS_CURATORS_TEXT_HTML = section_wrap("🧑‍🎓 Кураторы", ["Кураторский тг-канал: @gsomates"])
+CONTACTS_CURATORS_TEXT_HTML = section_wrap("🧑‍🎓 Кураторы", ["Кураторский тг-канал: <b>@gsomates</b>"])
 
 HELP_TEXT = section_wrap(
     "❓ Помощь",
     [
         "Навигация через кнопки под сообщениями.",
         "Команды: /start — перезапуск, /menu — открыть меню, /help — помощь.",
+        "Reply-кнопка «Запуск бота» — быстрый возврат к началу.",
         "Ссылки в карточках кликабельны.",
-        "Если что-то не работает — <a href='https://t.me/MeEncantaNegociar'>Telegram</a>"
+        "Если что-то не работает — <a href='https://t.me/MeEncantaNegociar'><b>Telegram</b></a>"
     ]
 )
 
-# ======================= ИНЛАЙН-МЕНЮ =======================
+# ======================= ИНЛАЙН-МЕНЮ (grid) =======================
 main_keyboard = grid([
     ("📚 TimeTable", "url", "https://timetable.spbu.ru/GSOM"),
     ("🎭 Студклубы", "cb",  "studclubs"),
@@ -278,68 +290,144 @@ contacts_keyboard = grid([
     ("⬅️ Назад",          "cb", "back_main"),
 ], per_row=2)
 
-# ======================= КОМАНДЫ =======================
+# ======================= Вспом. очистка приветствий =======================
+async def _clear_welcomes(chat_id: int):
+    for mid in list(welcome_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    welcome_msgs[chat_id].clear()
+    for mid in list(reply_placeholders.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    reply_placeholders[chat_id].clear()
+
+# ======================= Приветствие =======================
+async def _send_welcome(chat_id: int):
+    sent = await send_card(chat_id, WELCOME_TEXT, main_keyboard)
+    welcome_msgs[chat_id].add(sent.message_id)
+    placeholder = await bot.send_message(chat_id, " ", reply_markup=reply_keyboard)
+    reply_placeholders[chat_id].add(placeholder.message_id)
+
+# ======================= /help =======================
 @dp.message(Command("help"))
 async def help_handler(message: types.Message):
-    asyncio.create_task(schedule_delete(message.chat.id, message.message_id))
-    await send_or_edit_card(message.chat.id, HELP_TEXT, main_keyboard)
+    chat_id = message.chat.id
 
+    async def delayed_delete():
+        await asyncio.sleep(1.0)
+        try: await bot.delete_message(chat_id, message.message_id)
+        except: pass
+    asyncio.create_task(delayed_delete())
+
+    await _clear_welcomes(chat_id)
+    for mid in list(menu_bot_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    menu_bot_msgs[chat_id].clear()
+
+    sent = await send_card(chat_id, HELP_TEXT, main_keyboard)
+    help_bot_msgs[chat_id].add(sent.message_id)
+
+# ======================= /menu =======================
 @dp.message(Command("menu"))
 async def menu_handler(message: types.Message):
-    asyncio.create_task(schedule_delete(message.chat.id, message.message_id))
-    text = section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"])
-    await send_or_edit_card(message.chat.id, text, menu_keyboard)
+    chat_id = message.chat.id
 
+    async def delayed_delete():
+        await asyncio.sleep(1.0)
+        try: await bot.delete_message(chat_id, message.message_id)
+        except: pass
+    asyncio.create_task(delayed_delete())
+
+    await _clear_welcomes(chat_id)
+    for mid in list(help_bot_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    help_bot_msgs[chat_id].clear()
+
+    sent = await send_card(chat_id, section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"]), menu_keyboard)
+    menu_bot_msgs[chat_id].add(sent.message_id)
+
+# ======================= /start =======================
 @dp.message(Command(commands=["start", "старт"]))
 async def start_handler(message: types.Message):
-    asyncio.create_task(schedule_delete(message.chat.id, message.message_id))
-    await send_or_edit_card(message.chat.id, WELCOME_TEXT, main_keyboard)
+    chat_id = message.chat.id
 
-# ======================= КОЛБЭКИ =======================
+    async def delayed_delete():
+        await asyncio.sleep(1.0)
+        try: await bot.delete_message(chat_id, message.message_id)
+        except: pass
+    asyncio.create_task(delayed_delete())
+
+    for mid in list(help_bot_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    help_bot_msgs[chat_id].clear()
+
+    for mid in list(menu_bot_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    menu_bot_msgs[chat_id].clear()
+
+    await _clear_welcomes(chat_id)
+    await _send_welcome(chat_id)
+
+# ======================= Кнопка "Запуск бота" =======================
+@dp.message(F.text == REPLY_START_BTN)
+async def reply_start_handler(message: types.Message):
+    chat_id = message.chat.id
+    try:
+        await bot.delete_message(chat_id, message.message_id)
+    except: pass
+    sent = await send_card(chat_id, WELCOME_TEXT, main_keyboard)
+    welcome_msgs[chat_id].add(sent.message_id)
+
+# ======================= Колбэки =======================
 @dp.callback_query()
 async def callback_handler(cb: types.CallbackQuery):
     data = cb.data
-    chat_id = cb.message.chat.id
+    msg = cb.message
 
     if data == "studclubs":
-        await send_or_edit_card(chat_id, section_wrap("🎭 Студклубы", ["Выбери клуб ниже 👇"]), studclubs_keyboard)
+        await edit_card(msg, section_wrap("🎭 Студклубы", ["Выбери клуб ниже 👇"]), studclubs_keyboard)
     elif data == "menu":
-        await send_or_edit_card(chat_id, section_wrap("📖 Меню", ["Выбери нужный раздел 👇"]), menu_keyboard)
+        await edit_card(msg, section_wrap("📖 Меню", ["Выбери нужный раздел 👇"]), menu_keyboard)
     elif data == "back_main":
-        await send_or_edit_card(chat_id, WELCOME_TEXT, main_keyboard)
+        await edit_card(msg, WELCOME_TEXT, main_keyboard)
 
     elif data == "laundry":
-        await send_or_edit_card(chat_id, LAUNDRY_TEXT_HTML, menu_keyboard)
+        await edit_card(msg, LAUNDRY_TEXT_HTML, menu_keyboard)
     elif data == "water":
-        await send_or_edit_card(chat_id, WATER_TEXT_HTML, menu_keyboard)
+        await edit_card(msg, WATER_TEXT_HTML, menu_keyboard)
     elif data == "lost":
-        await send_or_edit_card(chat_id, LOST_TEXT_HTML, menu_keyboard)
+        await edit_card(msg, LOST_TEXT_HTML, menu_keyboard)
+        
 
     elif data == "case_club":
-        await send_or_edit_card(chat_id, CASE_CLUB_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, CASE_CLUB_TEXT_HTML, studclubs_keyboard)
     elif data == "kbk":
-        await send_or_edit_card(chat_id, KBK_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, KBK_TEXT_HTML, studclubs_keyboard)
     elif data == "falcon":
-        await send_or_edit_card(chat_id, FALCON_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, FALCON_TEXT_HTML, studclubs_keyboard)
     elif data == "MCW":
-        await send_or_edit_card(chat_id, MCW_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, MCW_TEXT_HTML, studclubs_keyboard)
     elif data == "golf":
-        await send_or_edit_card(chat_id, GOLF_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, GOLF_TEXT_HTML, studclubs_keyboard)
     elif data == "sport_culture":
-        await send_or_edit_card(chat_id, SPORT_CULTURE_TEXT_HTML, studclubs_keyboard)
+        await edit_card(msg, SPORT_CULTURE_TEXT_HTML, studclubs_keyboard)
 
     elif data == "contacts":
-        await send_or_edit_card(chat_id, section_wrap("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard)
+        await edit_card(msg, section_wrap("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard)
     elif data == "contact_admin":
-        await send_or_edit_card(chat_id, CONTACTS_ADMIN_TEXT, contacts_keyboard)
+        await edit_card(msg, CONTACTS_ADMIN_TEXT, contacts_keyboard)
     elif data == "contact_teachers":
-        await send_or_edit_card(chat_id, CONTACTS_TEACHERS_TEXT_HTML, contacts_keyboard)
+        await edit_card(msg, CONTACTS_TEACHERS_TEXT_HTML, contacts_keyboard)
     elif data == "contact_curators":
-        await send_or_edit_card(chat_id, CONTACTS_CURATORS_TEXT_HTML, contacts_keyboard)
+        await edit_card(msg, CONTACTS_CURATORS_TEXT_HTML, contacts_keyboard)
 
-    await cb.answer("Обновлено ✅", show_alert=False)
 
-# ======================= ЗАПУСК =======================
+
+# ======================= Запуск =======================
 async def main():
     try:
         await bot.set_my_commands([
@@ -347,9 +435,10 @@ async def main():
             types.BotCommand(command="menu",  description="Открыть меню"),
             types.BotCommand(command="help",  description="Помощь"),
         ])
-    except Exception:
-        pass
+    except: pass
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+#vbdriuohgiudhgiudr
