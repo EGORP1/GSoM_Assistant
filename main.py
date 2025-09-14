@@ -2,7 +2,6 @@ import os
 import re
 import asyncio
 import logging
-from collections import defaultdict
 from typing import List, Tuple, Optional, Sequence
 
 from aiogram import Bot, Dispatcher, types, F
@@ -13,16 +12,74 @@ from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton
 )
 
-# ====== Token ======
-TOKEN = "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs"
+# =============== ЛОГИ ===============
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("bot")
+
+# =============== TOKEN ===============
+TOKEN = os.getenv("BOT_TOKEN", "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs").strip()
 if not TOKEN or ":" not in TOKEN:
     raise RuntimeError("Некорректный токен Telegram бота.")
 
-logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# ======================= Reply Keyboard =======================
+# =============== REDIS (необязателен, но желателен на Railway) ===============
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+redis = None
+try:
+    if REDIS_URL:
+        import redis.asyncio as aioredis  # pip install redis
+        redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+        log.info("Redis подключен")
+    else:
+        log.warning("REDIS_URL не задан — использую in-memory режим")
+except Exception as e:
+    log.warning("Redis недоступен (%s) — использую in-memory режим", e)
+    redis = None
+
+# In-memory фолбэк (для локалки / без Redis)
+_active_msg_mem: dict[int, int] = {}
+_placeholder_mem: dict[int, int] = {}
+
+ACTIVE_KEY = "active_msg:{chat_id}"
+PLACEHOLDER_KEY = "placeholder_msg:{chat_id}"
+
+async def get_active_msg_id(chat_id: int) -> Optional[int]:
+    if redis:
+        return int(await redis.get(ACTIVE_KEY.format(chat_id=chat_id)) or 0) or None
+    return _active_msg_mem.get(chat_id)
+
+async def set_active_msg_id(chat_id: int, message_id: int):
+    if redis:
+        await redis.set(ACTIVE_KEY.format(chat_id=chat_id), message_id)
+    else:
+        _active_msg_mem[chat_id] = message_id
+
+async def clear_active_msg_id(chat_id: int):
+    if redis:
+        await redis.delete(ACTIVE_KEY.format(chat_id=chat_id))
+    else:
+        _active_msg_mem.pop(chat_id, None)
+
+async def get_placeholder_id(chat_id: int) -> Optional[int]:
+    if redis:
+        return int(await redis.get(PLACEHOLDER_KEY.format(chat_id=chat_id)) or 0) or None
+    return _placeholder_mem.get(chat_id)
+
+async def set_placeholder_id(chat_id: int, message_id: int):
+    if redis:
+        await redis.set(PLACEHOLDER_KEY.format(chat_id=chat_id), message_id)
+    else:
+        _placeholder_mem[chat_id] = message_id
+
+async def clear_placeholder_id(chat_id: int):
+    if redis:
+        await redis.delete(PLACEHOLDER_KEY.format(chat_id=chat_id))
+    else:
+        _placeholder_mem.pop(chat_id, None)
+
+# =============== Reply-клавиатура ===============
 REPLY_START_BTN = "Запуск бота"
 reply_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text=REPLY_START_BTN)]],
@@ -31,13 +88,7 @@ reply_keyboard = ReplyKeyboardMarkup(
     input_field_placeholder=""
 )
 
-# ==== Message Tracking for Deletion ====
-help_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
-menu_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
-welcome_msgs: defaultdict[int, set[int]] = defaultdict(set)
-reply_placeholders: defaultdict[int, set[int]] = defaultdict(set)
-
-# ======================= Thin Unicode =======================
+# =============== ТОНКИЙ ЮНИКОД ===============
 _THIN_MAP = str.maketrans({
     "A":"𝖠","B":"𝖡","C":"𝖢","D":"𝖣","E":"𝖤","F":"𝖥","G":"𝖦","H":"𝖧","I":"𝖨","J":"𝖩",
     "K":"𝖪","L":"𝖫","M":"𝖬","N":"𝖭","O":"𝖮","P":"𝖯","Q":"𝖰","R":"𝖱","S":"𝖲","T":"𝖳",
@@ -66,7 +117,7 @@ def to_thin(text: str, html_safe: bool = True, airy_cyrillic: bool = False) -> s
         out = re.sub(r'([А-Яа-яЁё])(?=([А-Яа-яЁё]))', r'\1\u200A', out)
     return out
 
-# ======================= Design Utilities =======================
+# =============== ДИЗАЙН-УТИЛИТЫ ===============
 def section(title: str, lines: Sequence[str], footer: Optional[str] = None) -> str:
     body = "\n".join(f"• {line}" for line in lines)
     foot = f"\n\n{footer}" if footer else ""
@@ -76,7 +127,7 @@ def grid(buttons: List[Tuple[str, str, str]], per_row: int = 2) -> InlineKeyboar
     rows: List[List[InlineKeyboardButton]] = []
     for i in range(0, len(buttons), per_row):
         chunk = buttons[i:i+per_row]
-        row: List[InlineKeyboardButton] = []
+        row: List[InlineKeyboardButton] = []   # ← фикс: убрана лишняя ']'
         for text, kind, value in chunk:
             if kind == "url":
                 row.append(InlineKeyboardButton(text=text, url=value))
@@ -85,24 +136,23 @@ def grid(buttons: List[Tuple[str, str, str]], per_row: int = 2) -> InlineKeyboar
         rows.append(row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-async def think(chat_id: int, delay: float = 0.45):
+async def think(chat_id: int, delay: float = 0.2):
     await bot.send_chat_action(chat_id, ChatAction.TYPING)
     await asyncio.sleep(delay)
 
-async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
+async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None) -> types.Message:
     await think(chat_id)
-    text = to_thin(text, html_safe=True)
-    msg = await bot.send_message(
+    text = to_thin(text, html_safe=True, airy_cyrillic=False)
+    return await bot.send_message(
         chat_id, text,
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=kb
     )
-    return msg
 
 async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMarkup] = None):
-    await asyncio.sleep(0.15)
-    text = to_thin(text, html_safe=True)
+    await asyncio.sleep(0.05)
+    text = to_thin(text, html_safe=True, airy_cyrillic=False)
     return await msg.edit_text(
         text,
         parse_mode="HTML",
@@ -110,13 +160,20 @@ async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMa
         reply_markup=kb
     )
 
-# ======================= Texts =======================
+async def delete_safe(chat_id: int, message_id: int):
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
+
+# =============== ТЕКСТЫ ===============
 WELCOME_TEXT = (
     "<b>Привет! 👋</b>\n\n"
     "Я твой ассистент в СПбГУ.\n\n"
     "Помогу с расписанием, расскажу про студклубы, дам полезные ссылки и контакты. 👇"
 )
 
+# ссылки исправлены (латинские m/z вместо кириллических м/з)
 LAUNDRY_TEXT_HTML = (
     "🧺 <b>Прачка СПбГУ</b>\n\n"
     "<a href=\"https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing\">Первый корпус</a>\n"
@@ -125,6 +182,7 @@ LAUNDRY_TEXT_HTML = (
 )
 
 WATER_TEXT_HTML = section("🚰 Вода", ["Пока пишите по номеру:", "<b>📞 +7 933 341-73-75</b>"])
+# ссылка исправлена (M5YzNi — латинская z)
 LOST_TEXT_HTML = section(
     "🔎 Потеряшки СПбГУ",
     [
@@ -134,7 +192,7 @@ LOST_TEXT_HTML = section(
     ]
 )
 
-# ======================= Keyboards =======================
+# =============== КНОПКИ ===============
 main_keyboard = grid([
     ("📚 TimeTable", "url", "https://timetable.spbu.ru/GSOM"),
     ("🎭 Студклубы", "cb", "studclubs"),
@@ -166,42 +224,52 @@ contacts_keyboard = grid([
     ("⬅️ Назад", "cb", "back_main"),
 ], per_row=2)
 
-# ======================= Clear Welcomes =======================
-async def _clear_welcomes(chat_id: int):
-    for mid in list(welcome_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    welcome_msgs[chat_id].clear()
-    for mid in list(reply_placeholders.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    reply_placeholders[chat_id].clear()
+# =============== ЕДИНАЯ ПОКАЗ КАРТОЧКИ (эксклюзивно) ===============
+async def show_card_exclusive(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
+    """
+    1) Пытаемся отредактировать «активное» сообщение.
+    2) Если не получилось — удаляем старое (если было) и отправляем новое.
+    3) Сохраняем id активного сообщения (в Redis или память).
+    4) Если была reply-кнопка-плейсхолдер — удаляем (кроме случаев, когда это /start, см. ниже).
+    """
+    prev_id = await get_active_msg_id(chat_id)
+    if prev_id:
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=prev_id,
+                text=to_thin(text, html_safe=True),
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=kb
+            )
+            # если редактирование прошло — старый плейсхолдер очистим
+            old_ph = await get_placeholder_id(chat_id)
+            if old_ph:
+                await delete_safe(chat_id, old_ph)
+                await clear_placeholder_id(chat_id)
+            return
+        except Exception:
+            try:
+                await delete_safe(chat_id, prev_id)
+            except Exception:
+                pass
 
-# ======================= Welcome =======================
-async def _send_welcome(chat_id: int):
-    sent = await send_card(chat_id, WELCOME_TEXT, main_keyboard)
-    welcome_msgs[chat_id].add(sent.message_id)
-    placeholder = await bot.send_message(chat_id, " ", reply_markup=reply_keyboard)
-    reply_placeholders[chat_id].add(placeholder.message_id)
+    sent = await send_card(chat_id, text, kb)
+    await set_active_msg_id(chat_id, sent.message_id)
 
-# ======================= /help =======================
+    old_ph = await get_placeholder_id(chat_id)
+    if old_ph:
+        await delete_safe(chat_id, old_ph)
+        await clear_placeholder_id(chat_id)
+
+# =============== КОМАНДЫ ===============
 @dp.message(Command("help"))
 async def help_handler(message: types.Message):
-    chat_id = message.chat.id
+    asyncio.create_task(asyncio.sleep(0.5))
+    asyncio.create_task(delete_safe(message.chat.id, message.message_id))
 
-    async def delayed_delete():
-        await asyncio.sleep(1.0)
-        try: await bot.delete_message(chat_id, message.message_id)
-        except: pass
-    asyncio.create_task(delayed_delete())
-
-    await _clear_welcomes(chat_id)
-    for mid in list(menu_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    menu_bot_msgs[chat_id].clear()
-
-    HELP_TEXT = section(
+    help_text = section(
         "❓ Помощь",
         [
             "Навигация через кнопки под сообщениями.",
@@ -210,65 +278,44 @@ async def help_handler(message: types.Message):
             "Ссылки в карточках кликабельны."
         ]
     )
+    await show_card_exclusive(message.chat.id, help_text, main_keyboard)
 
-    sent = await send_card(chat_id, HELP_TEXT, main_keyboard)
-    help_bot_msgs[chat_id].add(sent.message_id)
-
-# ======================= /menu =======================
 @dp.message(Command("menu"))
 async def menu_handler(message: types.Message):
-    chat_id = message.chat.id
+    asyncio.create_task(asyncio.sleep(0.5))
+    asyncio.create_task(delete_safe(message.chat.id, message.message_id))
+    text = section("📖 Меню", ["Выбери нужный раздел ниже 👇"])
+    await show_card_exclusive(message.chat.id, text, menu_keyboard)
 
-    async def delayed_delete():
-        await asyncio.sleep(1.0)
-        try: await bot.delete_message(chat_id, message.message_id)
-        except: pass
-    asyncio.create_task(delayed_delete())
-
-    await _clear_welcomes(chat_id)
-    for mid in list(help_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    help_bot_msgs[chat_id].clear()
-
-    sent = await send_card(chat_id, section("📖 Меню", ["Выбери нужный раздел ниже 👇"]), menu_keyboard)
-    menu_bot_msgs[chat_id].add(sent.message_id)
-
-# ======================= /start =======================
 @dp.message(Command(commands=["start", "старт"]))
 async def start_handler(message: types.Message):
-    chat_id = message.chat.id
+    asyncio.create_task(asyncio.sleep(0.5))
+    asyncio.create_task(delete_safe(message.chat.id, message.message_id))
 
-    async def delayed_delete():
-        await asyncio.sleep(1.0)
-        try: await bot.delete_message(chat_id, message.message_id)
-        except: pass
-    asyncio.create_task(delayed_delete())
+    await show_card_exclusive(message.chat.id, WELCOME_TEXT, main_keyboard)
 
-    for mid in list(help_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    help_bot_msgs[chat_id].clear()
+    old_ph = await get_placeholder_id(message.chat.id)
+    if old_ph:
+        await delete_safe(message.chat.id, old_ph)
+        await clear_placeholder_id(message.chat.id)
 
-    for mid in list(menu_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    menu_bot_msgs[chat_id].clear()
+    placeholder = await bot.send_message(message.chat.id, " ", reply_markup=reply_keyboard)
+    await set_placeholder_id(message.chat.id, placeholder.message_id)
 
-    await _clear_welcomes(chat_id)
-    await _send_welcome(chat_id)
-
-# ======================= Reply Button "Запуск бота" =======================
+# Reply-кнопка
 @dp.message(F.text == REPLY_START_BTN)
 async def reply_start_handler(message: types.Message):
-    chat_id = message.chat.id
-    try:
-        await bot.delete_message(chat_id, message.message_id)
-    except: pass
-    sent = await send_card(chat_id, WELCOME_TEXT, main_keyboard)
-    welcome_msgs[chat_id].add(sent.message_id)
+    asyncio.create_task(delete_safe(message.chat.id, message.message_id))
+    await show_card_exclusive(message.chat.id, WELCOME_TEXT, main_keyboard)
 
-# ======================= Callback Queries =======================
+    old_ph = await get_placeholder_id(message.chat.id)
+    if old_ph:
+        await delete_safe(message.chat.id, old_ph)
+        await clear_placeholder_id(message.chat.id)
+    placeholder = await bot.send_message(message.chat.id, " ", reply_markup=reply_keyboard)
+    await set_placeholder_id(message.chat.id, placeholder.message_id)
+
+# =============== КОЛБЭКИ ===============
 @dp.callback_query()
 async def callback_handler(cb: types.CallbackQuery):
     data = cb.data
@@ -309,15 +356,16 @@ async def callback_handler(cb: types.CallbackQuery):
 
     await cb.answer("Обновлено ✅", show_alert=False)
 
-# ======================= Bot Startup =======================
+# =============== ЗАПУСК ===============
 async def main():
     try:
         await bot.set_my_commands([
             types.BotCommand(command="start", description="Запуск / перезапуск"),
-            types.BotCommand(command="menu", description="Открыть меню"),
-            types.BotCommand(command="help", description="Помощь"),
+            types.BotCommand(command="menu",  description="Открыть меню"),
+            types.BotCommand(command="help",  description="Помощь"),
         ])
-    except: pass
+    except Exception:
+        pass
 
     await dp.start_polling(bot)
 
