@@ -91,7 +91,7 @@ async def think(chat_id: int, delay: float = 0.45):
 
 async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
     await think(chat_id)
-    text = to_thin(text, html_safe=True, airy_cyrillic=False)  # << вариант B
+    text = to_thin(text, html_safe=True, airy_cyrillic=False)
     return await bot.send_message(
         chat_id, text,
         parse_mode="HTML",
@@ -101,13 +101,38 @@ async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] 
 
 async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMarkup] = None):
     await asyncio.sleep(0.15)
-    text = to_thin(text, html_safe=True, airy_cyrillic=False)  # << вариант B
+    text = to_thin(text, html_safe=True, airy_cyrillic=False)
     return await msg.edit_text(
         text,
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=kb
     )
+
+async def schedule_delete(chat_id: int, message_id: int, delay: float):
+    try:
+        await asyncio.sleep(delay)
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
+
+# ===== помощники удаления =====
+async def _delete_id_set(chat_id: int, idset: set[int]):
+    for mid in list(idset):
+        try:
+            await bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+    idset.clear()
+
+async def _clear_welcomes(chat_id: int):
+    await _delete_id_set(chat_id, welcome_msgs[chat_id])
+    await _delete_id_set(chat_id, reply_placeholders[chat_id])
+
+async def _clear_help_and_menu(chat_id: int):
+    """Полностью убираем ВСЕ help и menu, чтобы не было дублей."""
+    await _delete_id_set(chat_id, help_bot_msgs[chat_id])
+    await _delete_id_set(chat_id, menu_bot_msgs[chat_id])
 
 # ======================= ТЕКСТЫ =======================
 WELCOME_TEXT = (
@@ -159,8 +184,6 @@ KBK_TEXT_HTML = (
     "Погрузиться в атмосферу Китая теперь можно и в онлайн-режиме — через наш эксклюзивный контент "
     "и медиа-шоу, которое захватывает с первой серии. С нами ты получишь экспертные знания, "
     "полезные связи и крутые карьерные возможности.\n\n"
-    "Следи за КБК из любой точки нашей страны и готовься к кульминации сезона — масштабному форуму, "
-    "который пройдёт в стенах лучшей бизнес-школы России ВШМ СПбГУ уже этой весной!\n\n"
     "🌐 <a href='https://forum-cbc.ru/'><b>Сайт</b></a>\n"
     "📘 <a href='https://vk.com/forumcbc'><b>ВКонтакте</b></a>\n"
     "📲 <a href='https://t.me/forumcbc'><b>Telegram</b></a>"
@@ -275,17 +298,6 @@ contacts_keyboard = grid([
     ("⬅️ Назад",          "cb", "back_main"),
 ], per_row=2)
 
-# ======================= Вспом. очистка приветствий =======================
-async def _clear_welcomes(chat_id: int):
-    for mid in list(welcome_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    welcome_msgs[chat_id].clear()
-    for mid in list(reply_placeholders.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    reply_placeholders[chat_id].clear()
-
 # ======================= Приветствие =======================
 async def _send_welcome(chat_id: int):
     sent = await send_card(chat_id, WELCOME_TEXT, main_keyboard)
@@ -297,18 +309,11 @@ async def _send_welcome(chat_id: int):
 @dp.message(Command("help"))
 async def help_handler(message: types.Message):
     chat_id = message.chat.id
+    asyncio.create_task(schedule_delete(chat_id, message.message_id, 1.0))
 
-    async def delayed_delete():
-        await asyncio.sleep(1.0)
-        try: await bot.delete_message(chat_id, message.message_id)
-        except: pass
-    asyncio.create_task(delayed_delete())
-
+    # Всегда чистим приветствия и ВСЕ help/menu, чтобы не было дублей
     await _clear_welcomes(chat_id)
-    for mid in list(menu_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    menu_bot_msgs[chat_id].clear()
+    await _clear_help_and_menu(chat_id)
 
     sent = await send_card(chat_id, HELP_TEXT, main_keyboard)
     help_bot_msgs[chat_id].add(sent.message_id)
@@ -317,43 +322,24 @@ async def help_handler(message: types.Message):
 @dp.message(Command("menu"))
 async def menu_handler(message: types.Message):
     chat_id = message.chat.id
+    asyncio.create_task(schedule_delete(chat_id, message.message_id, 1.0))
 
-    async def delayed_delete():
-        await asyncio.sleep(1.0)
-        try: await bot.delete_message(chat_id, message.message_id)
-        except: pass
-    asyncio.create_task(delayed_delete())
-
+    # Всегда чистим приветствия и ВСЕ help/menu, чтобы не было дублей
     await _clear_welcomes(chat_id)
-    for mid in list(help_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    help_bot_msgs[chat_id].clear()
+    await _clear_help_and_menu(chat_id)
 
-    sent = await send_card(chat_id, section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"]), menu_keyboard)
+    text = section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"])
+    sent = await send_card(chat_id, text, menu_keyboard)
     menu_bot_msgs[chat_id].add(sent.message_id)
 
 # ======================= /start =======================
 @dp.message(Command(commands=["start", "старт"]))
 async def start_handler(message: types.Message):
     chat_id = message.chat.id
+    asyncio.create_task(schedule_delete(chat_id, message.message_id, 1.0))
 
-    async def delayed_delete():
-        await asyncio.sleep(1.0)
-        try: await bot.delete_message(chat_id, message.message_id)
-        except: pass
-    asyncio.create_task(delayed_delete())
-
-    for mid in list(help_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    help_bot_msgs[chat_id].clear()
-
-    for mid in list(menu_bot_msgs.get(chat_id, set())):
-        try: await bot.delete_message(chat_id, mid)
-        except: pass
-    menu_bot_msgs[chat_id].clear()
-
+    # При старте тоже чистим всё, чтобы не остались help/menu
+    await _clear_help_and_menu(chat_id)
     await _clear_welcomes(chat_id)
     await _send_welcome(chat_id)
 
@@ -363,7 +349,9 @@ async def reply_start_handler(message: types.Message):
     chat_id = message.chat.id
     try:
         await bot.delete_message(chat_id, message.message_id)
-    except: pass
+    except Exception:
+        pass
+    # Не трогаем help/menu здесь, просто новое приветствие
     sent = await send_card(chat_id, WELCOME_TEXT, main_keyboard)
     welcome_msgs[chat_id].add(sent.message_id)
 
@@ -386,7 +374,6 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_card(msg, WATER_TEXT_HTML, menu_keyboard)
     elif data == "lost":
         await edit_card(msg, LOST_TEXT_HTML, menu_keyboard)
-        
 
     elif data == "case_club":
         await edit_card(msg, CASE_CLUB_TEXT_HTML, studclubs_keyboard)
@@ -410,7 +397,7 @@ async def callback_handler(cb: types.CallbackQuery):
     elif data == "contact_curators":
         await edit_card(msg, CONTACTS_CURATORS_TEXT_HTML, contacts_keyboard)
 
-
+    await cb.answer("Обновлено ✅", show_alert=False)
 
 # ======================= Запуск =======================
 async def main():
@@ -420,7 +407,8 @@ async def main():
             types.BotCommand(command="menu",  description="Открыть меню"),
             types.BotCommand(command="help",  description="Помощь"),
         ])
-    except: pass
+    except Exception:
+        pass
 
     await dp.start_polling(bot)
 
