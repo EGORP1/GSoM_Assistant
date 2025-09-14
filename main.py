@@ -37,8 +37,8 @@ menu_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
 welcome_msgs:   defaultdict[int, set[int]] = defaultdict(set)
 reply_placeholders: defaultdict[int, set[int]] = defaultdict(set)
 
-# общий пул всех сообщений бота (для /clear)
 all_bot_msgs: defaultdict[int, set[int]] = defaultdict(set)
+
 
 # ======================= ТОНКИЙ ЮНИКОД =======================
 _THIN_MAP = str.maketrans({
@@ -105,8 +105,18 @@ async def send_card(chat_id: int, text: str, kb: Optional[InlineKeyboardMarkup] 
     return msg
 
 async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMarkup] = None):
-    await asyncio.sleep(0.15)
+    await asyncio.sleep(0.7)
     text = to_thin(text, html_safe=True, airy_cyrillic=False)
+    return await msg.edit_text(
+        text,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=kb
+    )
+
+async def edit_card(msg: types.Message, text: str, kb: Optional[InlineKeyboardMarkup] = None):
+    await asyncio.sleep(0.7)
+    text = to_thin(text, html_safe=True, airy_cyrillic=False)  # << вариант B
     return await msg.edit_text(
         text,
         parse_mode="HTML",
@@ -164,6 +174,8 @@ KBK_TEXT_HTML = (
     "Погрузиться в атмосферу Китая теперь можно и в онлайн-режиме — через наш эксклюзивный контент "
     "и медиа-шоу, которое захватывает с первой серии. С нами ты получишь экспертные знания, "
     "полезные связи и крутые карьерные возможности.\n\n"
+    "Следи за КБК из любой точки нашей страны и готовься к кульминации сезона — масштабному форуму, "
+    "который пройдёт в стенах лучшей бизнес-школы России ВШМ СПбГУ уже этой весной!\n\n"
     "🌐 <a href='https://forum-cbc.ru/'><b>Сайт</b></a>\n"
     "📘 <a href='https://vk.com/forumcbc'><b>ВКонтакте</b></a>\n"
     "📲 <a href='https://t.me/forumcbc'><b>Telegram</b></a>"
@@ -278,18 +290,16 @@ contacts_keyboard = grid([
     ("⬅️ Назад",          "cb", "back_main"),
 ], per_row=2)
 
-# ======================= Вспом. очистка =======================
-async def _purge_set(chat_id: int, storage: defaultdict[int, set[int]]):
-    for mid in list(storage.get(chat_id, set())):
-        try:
-            await bot.delete_message(chat_id, mid)
-        except Exception:
-            pass
-    storage[chat_id].clear()
-
+# ======================= Вспом. очистка приветствий =======================
 async def _clear_welcomes(chat_id: int):
-    await _purge_set(chat_id, welcome_msgs)
-    await _purge_set(chat_id, reply_placeholders)
+    for mid in list(welcome_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    welcome_msgs[chat_id].clear()
+    for mid in list(reply_placeholders.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    reply_placeholders[chat_id].clear()
 
 # ======================= Приветствие =======================
 async def _send_welcome(chat_id: int):
@@ -297,22 +307,23 @@ async def _send_welcome(chat_id: int):
     welcome_msgs[chat_id].add(sent.message_id)
     placeholder = await bot.send_message(chat_id, " ", reply_markup=reply_keyboard)
     reply_placeholders[chat_id].add(placeholder.message_id)
-    # трекаем плейсхолдер тоже, чтобы /clear удалял его
-    all_bot_msgs[chat_id].add(placeholder.message_id)
 
 # ======================= /help =======================
 @dp.message(Command("help"))
 async def help_handler(message: types.Message):
     chat_id = message.chat.id
 
-    asyncio.create_task(asyncio.sleep(1.0))
-    try:
-        asyncio.create_task(bot.delete_message(chat_id, message.message_id))
-    except Exception:
-        pass
+    async def delayed_delete():
+        await asyncio.sleep(1.0)
+        try: await bot.delete_message(chat_id, message.message_id)
+        except: pass
+    asyncio.create_task(delayed_delete())
 
     await _clear_welcomes(chat_id)
-    await _purge_set(chat_id, menu_bot_msgs)
+    for mid in list(menu_bot_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    menu_bot_msgs[chat_id].clear()
 
     sent = await send_card(chat_id, HELP_TEXT, main_keyboard)
     help_bot_msgs[chat_id].add(sent.message_id)
@@ -322,73 +333,43 @@ async def help_handler(message: types.Message):
 async def menu_handler(message: types.Message):
     chat_id = message.chat.id
 
-    asyncio.create_task(asyncio.sleep(1.0))
-    try:
-        asyncio.create_task(bot.delete_message(chat_id, message.message_id))
-    except Exception:
-        pass
+    async def delayed_delete():
+        await asyncio.sleep(1.0)
+        try: await bot.delete_message(chat_id, message.message_id)
+        except: pass
+    asyncio.create_task(delayed_delete())
 
     await _clear_welcomes(chat_id)
-    await _purge_set(chat_id, help_bot_msgs)
+    for mid in list(help_bot_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    help_bot_msgs[chat_id].clear()
 
     sent = await send_card(chat_id, section_wrap("📖 Меню", ["Выбери нужный раздел ниже 👇"]), menu_keyboard)
     menu_bot_msgs[chat_id].add(sent.message_id)
-
-# ======================= /clear (NUKE) =======================
-@dp.message(Command("clear"))
-async def clear_handler(message: types.Message):
-    """Удаляет все сообщения, которые когда-либо отправлял бот в этом чате."""
-    chat_id = message.chat.id
-
-    # сначала уберём саму команду пользователя
-    try:
-        await bot.delete_message(chat_id, message.message_id)
-    except Exception:
-        pass
-
-    # собрать весь пул id к удалению
-    ids_to_delete = set(all_bot_msgs.get(chat_id, set()))
-    ids_to_delete |= help_bot_msgs.get(chat_id, set())
-    ids_to_delete |= menu_bot_msgs.get(chat_id, set())
-    ids_to_delete |= welcome_msgs.get(chat_id, set())
-    ids_to_delete |= reply_placeholders.get(chat_id, set())
-
-    # удалить
-    for mid in list(sorted(ids_to_delete)):
-        try:
-            await bot.delete_message(chat_id, mid)
-        except Exception:
-            pass
-
-    # очистить трекеры
-    all_bot_msgs[chat_id].clear()
-    help_bot_msgs[chat_id].clear()
-    menu_bot_msgs[chat_id].clear()
-    welcome_msgs[chat_id].clear()
-    reply_placeholders[chat_id].clear()
-
-    # по желанию можно показать короткое подтверждение и сразу убрать:
-    try:
-        conf = await bot.send_message(chat_id, "Чат очищен ✅")
-        await asyncio.sleep(0.8)
-        await bot.delete_message(chat_id, conf.message_id)
-    except Exception:
-        pass
 
 # ======================= /start =======================
 @dp.message(Command(commands=["start", "старт"]))
 async def start_handler(message: types.Message):
     chat_id = message.chat.id
 
-    try:
-        asyncio.create_task(bot.delete_message(chat_id, message.message_id))
-    except Exception:
-        pass
+    async def delayed_delete():
+        await asyncio.sleep(1.0)
+        try: await bot.delete_message(chat_id, message.message_id)
+        except: pass
+    asyncio.create_task(delayed_delete())
 
-    await _purge_set(chat_id, help_bot_msgs)
-    await _purge_set(chat_id, menu_bot_msgs)
+    for mid in list(help_bot_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    help_bot_msgs[chat_id].clear()
+
+    for mid in list(menu_bot_msgs.get(chat_id, set())):
+        try: await bot.delete_message(chat_id, mid)
+        except: pass
+    menu_bot_msgs[chat_id].clear()
+
     await _clear_welcomes(chat_id)
-
     await _send_welcome(chat_id)
 
 # ======================= Кнопка "Запуск бота" =======================
@@ -397,12 +378,9 @@ async def reply_start_handler(message: types.Message):
     chat_id = message.chat.id
     try:
         await bot.delete_message(chat_id, message.message_id)
-    except Exception:
-        pass
-    await _purge_set(chat_id, help_bot_msgs)
-    await _purge_set(chat_id, menu_bot_msgs)
-    await _clear_welcomes(chat_id)
-    await _send_welcome(chat_id)
+    except: pass
+    sent = await send_card(chat_id, WELCOME_TEXT, main_keyboard)
+    welcome_msgs[chat_id].add(sent.message_id)
 
 # ======================= Колбэки =======================
 @dp.callback_query()
@@ -423,6 +401,7 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_card(msg, WATER_TEXT_HTML, menu_keyboard)
     elif data == "lost":
         await edit_card(msg, LOST_TEXT_HTML, menu_keyboard)
+        
 
     elif data == "case_club":
         await edit_card(msg, CASE_CLUB_TEXT_HTML, studclubs_keyboard)
@@ -446,6 +425,8 @@ async def callback_handler(cb: types.CallbackQuery):
     elif data == "contact_curators":
         await edit_card(msg, CONTACTS_CURATORS_TEXT_HTML, contacts_keyboard)
 
+
+
 # ======================= Запуск =======================
 async def main():
     try:
@@ -453,12 +434,11 @@ async def main():
             types.BotCommand(command="start", description="Запуск / перезапуск"),
             types.BotCommand(command="menu",  description="Открыть меню"),
             types.BotCommand(command="help",  description="Помощь"),
-            types.BotCommand(command="clear", description="Очистить чат"),
         ])
-    except Exception:
-        pass
+    except: pass
 
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+#vbdriuohgiudhgiudr
