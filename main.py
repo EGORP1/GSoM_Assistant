@@ -118,8 +118,8 @@ WELCOME_TEXT = (
 
 LAUNDRY_TEXT_HTML = (
     "🧺 <b>Прачка СПбГУ</b>\n\n"
-    "1️⃣ <a href='https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing'><b>Первый корпус</b></a>/"
-    "2️⃣ <a href='https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk'><b>Второй корпус</b></a>"
+    "1️⃣ <a href='https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing'><b>Первый корпус</b></a>/n/n"
+    "2️⃣ <a href='https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHnNnLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk'><b>Второй корпус</b></a>/n/n"
     "3️⃣ <a href='https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing'><b>Третий корпус</b></a>"
     "4️⃣ <a href='https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit'><b>Четвертый корпус</b></a>"
     "5️⃣ <a href='https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing'><b>Пятый корпус</b></a>"
