@@ -17,7 +17,7 @@ from aiogram.types import (
 # ======================= Конфиг =======================
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-TOKEN = os.getenv("BOT_TOKEN", "").strip()
+TOKEN = os.getenv("BOT_TOKEN", "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs").strip()
 if not TOKEN or ":" not in TOKEN:
     raise RuntimeError("Переменная окружения BOT_TOKEN отсутствует или некорректна.")
 
