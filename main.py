@@ -179,7 +179,7 @@ LAUNDRY_TEXT_HTML = (
 def section_wrap(title, items):
     return section(title, items)
 
-WATER_TEXT_HTML = section_wrap("🚰 Вода", ["Пока пишите по номеру:", "📞 +7 933 341-73-75"])
+WATER_TEXT_HTML = section_wrap("🚰 Вода", ["Пишите в группу в <a href="https://chat.whatsapp.com/BUtruTEY8pvL9Ryh5TcaLw?mode=ems_copy_t">Whatsapp</a>"])
 
 LOST_TEXT_HTML = section_wrap(
     "🔎 Потеряшки СПбГУ",
