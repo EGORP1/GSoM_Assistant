@@ -369,4 +369,42 @@ async def callback_handler(cb: types.CallbackQuery):
 
     # ==== контакты ====
     elif data == "contacts":
-        await edit_text_or_send_new(msg, section("📞 Контак
+        await edit_text_or_send_new(msg, section("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard)
+
+    elif data == "contact_admin":
+        await edit_text_or_send_new(msg, section("Администрация", ["office@gsom.spbu.ru"]), contacts_keyboard)
+
+    elif data == "contact_teachers":
+        # первая страница списка преподавателей
+        text, kb = get_teachers_page(1)
+        await edit_text_or_send_new(msg, text, kb)
+
+    elif data.startswith("teachers_page:"):
+        # пагинация преподавателей
+        try:
+            page = int(data.split(":")[1])
+        except Exception:
+            page = 1
+        text, kb = get_teachers_page(page)
+        await edit_text_or_send_new(msg, text, kb)
+
+    elif data == "contact_curators":
+        await edit_text_or_send_new(msg, section("Кураторы", ["@gsomates"]), contacts_keyboard)
+
+    await cb.answer("Обновлено", show_alert=False)
+
+# ======================= ЗАПУСК =======================
+async def main():
+    try:
+        await bot.set_my_commands([
+            types.BotCommand(command="start", description="Запуск / перезапуск"),
+            types.BotCommand(command="menu",  description="Открыть меню"),
+            types.BotCommand(command="help",  description="Помощь"),
+            types.BotCommand(command="clear", description="Очистить все сообщения бота"),
+        ])
+    except Exception:
+        pass
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
