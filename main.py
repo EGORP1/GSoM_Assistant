@@ -87,6 +87,16 @@ async def edit_media_or_send_new(msg: types.Message, image_path: str, caption_ht
         await delete_safe(msg.chat.id, msg.message_id)
         await send_media_card(msg.chat.id, image_path, caption_html, kb)
 
+async def edit_text_or_send_new(msg: types.Message, text_html: str,
+                                kb: Optional[InlineKeyboardMarkup] = None):
+    """Безопасное возвращение к текстовой карточке (например, по «Назад»).
+       Если текущее сообщение медиа — удаляем и отправляем новую текстовую карточку."""
+    try:
+        await msg.edit_text(text_html, parse_mode="HTML", disable_web_page_preview=True, reply_markup=kb)
+    except Exception:
+        await delete_safe(msg.chat.id, msg.message_id)
+        await send_card(msg.chat.id, text_html, kb)
+
 # ======================= ТЕКСТЫ =======================
 WELCOME_TEXT = (
     "<b>Привет! 👋</b>\n\n"
@@ -99,7 +109,7 @@ LAUNDRY_TEXT_HTML = (
     "2) <a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHнНLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
     "3) <a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
     "4) <a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit\">Четвертый корпус</a>\n"
-    "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
+    "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6кzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
     "6) <a href=\"https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing\">Шестой корпус</a>\n"
     "7) <a href=\"https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk\">Седьмой корпус</a>\n"
     "8) <a href=\"https://docs.google.com/spreadsheets/d/1EBvaLpxAK5r91yc-jaCa8bj8iLumwJvGFjTDlEArRLA/edit?usp=sharing\">Восьмой корпус</a>\n"
@@ -220,20 +230,21 @@ async def callback_handler(cb: types.CallbackQuery):
     data = cb.data
     msg  = cb.message
 
+    # --- текстовые разделы: используем безопасный переход к тексту ---
     if data == "studclubs":
-        await edit_card(msg, section("🎭 Студклубы", ["Выбери клуб ниже 👇"]), studclubs_keyboard)
+        await edit_text_or_send_new(msg, section("🎭 Студклубы", ["Выбери клуб ниже 👇"]), studclubs_keyboard)
     elif data == "menu":
-        await edit_card(msg, section("📖 Меню", ["Выбери нужный раздел 👇"]), menu_keyboard)
+        await edit_text_or_send_new(msg, section("📖 Меню", ["Выбери нужный раздел 👇"]), menu_keyboard)
     elif data == "back_main":
-        await edit_card(msg, WELCOME_TEXT, main_keyboard)
+        await edit_text_or_send_new(msg, WELCOME_TEXT, main_keyboard)
     elif data == "laundry":
-        await edit_card(msg, LAUNDRY_TEXT_HTML, menu_keyboard)
+        await edit_text_or_send_new(msg, LAUNDRY_TEXT_HTML, menu_keyboard)
     elif data == "water":
-        await edit_card(msg, WATER_TEXT_HTML, menu_keyboard)
+        await edit_text_or_send_new(msg, WATER_TEXT_HTML, menu_keyboard)
     elif data == "lost":
-        await edit_card(msg, LOST_TEXT_HTML, menu_keyboard)
+        await edit_text_or_send_new(msg, LOST_TEXT_HTML, menu_keyboard)
 
-    # ==== клубы: заменяем на медиакарточку (картинка + подпись) ====
+    # ==== клубы: медиакарточки (картинка + подпись) ====
     elif data == "case_club":
         await edit_media_or_send_new(
             msg,
@@ -262,22 +273,21 @@ async def callback_handler(cb: types.CallbackQuery):
             caption_html="📌 <b>Management Career Week</b>\n\n<a href='https://t.me/falcongsom'>Telegram</a>",
             kb=studclubs_keyboard
         )
-    # ===============================================================
 
     elif data == "golf":
-        await edit_card(msg, section("SPbU Golf Club", ["Информация о клубе"]), studclubs_keyboard)
+        await edit_text_or_send_new(msg, section("SPbU Golf Club", ["Информация о клубе"]), studclubs_keyboard)
     elif data == "sport_culture":
-        await edit_card(msg, section("Sport and Culture", ["Информация о клубе"]), studclubs_keyboard)
+        await edit_text_or_send_new(msg, section("Sport and Culture", ["Информация о клубе"]), studclubs_keyboard)
     elif data == "contacts":
-        await edit_card(msg, section("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard)
+        await edit_text_or_send_new(msg, section("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard)
     elif data == "contact_admin":
-        await edit_card(msg, section("Администрация", ["office@gsom.spbu.ru"]), contacts_keyboard)
+        await edit_text_or_send_new(msg, section("Администрация", ["office@gsom.spbu.ru"]), contacts_keyboard)
     elif data == "contact_teachers":
-        await edit_card(msg, section("Преподаватели", ["Список преподавателей"]), contacts_keyboard)
+        await edit_text_or_send_new(msg, section("Преподаватели", ["Список преподавателей"]), contacts_keyboard)
     elif data == "contact_curators":
-        await edit_card(msg, section("Кураторы", ["@gsomates"]), contacts_keyboard)
+        await edit_text_or_send_new(msg, section("Кураторы", ["@gsomates"]), contacts_keyboard)
 
-    await cb.answer("Обновлено ✅", show_alert=False)
+    await cb.answer("Обновлено", show_alert=False)
 
 # ======================= ЗАПУСК =======================
 async def main():
