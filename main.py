@@ -108,7 +108,7 @@ LAUNDRY_TEXT_HTML = (
     "2) <a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHнНLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
     "3) <a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
     "4) <a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit\">Четвертый корпус</a>\n"
-    "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6кzOZoTXдCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
+    "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSрwcBd4FhhJpY897udcCKx6кzOZoTXдCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
     "6) <a href=\"https://docs.google.com/spreadsheets/d/140z6wAzC4QR3SKVec7QLJIZp4CHfNacVDFoIZcov1aI/edit?usp=sharing\">Шестой корпус</a>\n"
     "7) <a href=\"https://docs.google.com/spreadsheets/d/197PG09l5Tl9PkGJo2zqySbOTKdmcF_2mO4D_VTMrSa4/edit?usp=drivesdk\">Седьмой корпус</a>\n"
     "8) <a href=\"https://docs.google.com/spreadsheets/d/1EBvaLpxAK5r91yc-jaCa8bj8iLumwJvGFjTDlEArRLA/edit?usp=sharing\">Восьмой корпус</a>\n"
@@ -389,11 +389,10 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_text_or_send_new(msg, text, kb)
 
     elif data == "contact_curators":
+        # ✅ исправлено: section ожидает список строк
         await edit_text_or_send_new(
             msg,
-            section(
-                "<a href='https://t.me/gsomates'>Кураторский канал</a>"
-            ),
+            section("Кураторы", ["<a href='https://t.me/gsomates'>Кураторский канал</a>"]),
             contacts_keyboard
         )
 
