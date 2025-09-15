@@ -12,7 +12,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFil
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("bot")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7936690948:AAGbisw1Sc4CQxxR-208mIF-FVUiZalpoJs").strip()
 if not BOT_TOKEN or ":" not in BOT_TOKEN:
     raise RuntimeError("Укажи BOT_TOKEN в переменных окружения")
 
