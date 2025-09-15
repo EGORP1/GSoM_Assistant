@@ -389,7 +389,7 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_text_or_send_new(msg, text, kb)
 
     elif data == "contact_curators":
-        await edit_text_or_send_new(msg, section("Кураторы", ["@gsomates"]), contacts_keyboard)
+        await edit_text_or_send_new(msg, section("Кураторский <a href='https://t.me/gsomates'></a>-канал"), contacts_keyboard)
 
     await cb.answer("Обновлено", show_alert=False)
 
