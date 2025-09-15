@@ -44,9 +44,9 @@ async def think(chat_id: int, delay: float = 0.1):
 
 # ======================= UI-ХЕЛПЕРЫ =======================
 def section(title: str, lines: Sequence[str], footer: Optional[str] = None) -> str:
-    # УБРАНЫ "•"
     body = "\n".join(lines)
-    return f"<b>{title}</b>\n\n{body}{('\n\n'+footer) if footer else ''}"
+    extra = f"\n\n{footer}" if footer else ""
+    return f"<b>{title}</b>\n\n{body}{extra}"
 
 def _row(buttons: List[Tuple[str, str, str]]) -> List[InlineKeyboardButton]:
     row: List[InlineKeyboardButton] = []
