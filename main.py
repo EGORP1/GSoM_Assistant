@@ -10,7 +10,7 @@ from aiogram.filters import Command
 from aiogram.enums import ChatAction
 from aiogram.types import (
     InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton, InputMediaPhoto
+    ReplyKeyboardMarkup, KeyboardButton, InputMediaPhoto, FSInputFile   # <— ДОБАВИЛ FSInputFile
 )
 
 # ======================= ЛОГИ =======================
@@ -370,21 +370,41 @@ async def clear_handler(message: types.Message):
     await reg_push(chat_id, confirm.message_id)
     asyncio.create_task(schedule_delete(chat_id, confirm.message_id, 1.0))
 
-# ======================= REPLY-КНОПКА =======================
-@dp.message(F.text == REPLY_START_BTN)
-async def reply_start_handler(message: types.Message):
-    asyncio.create_task(schedule_delete(message.chat.id, message.message_id, 0.3))
-    await show_card_exclusive(message.chat.id, WELCOME_TEXT, main_keyboard)
+# ======================= хелпер =======================
+async def send_media_card(chat_id: int, image_path: str, caption_html: str,
+                          kb: Optional[InlineKeyboardMarkup] = None) -> types.Message:
+    """Отправляет фото с подписью (HTML) и регистрирует сообщение в /clear."""
+    await think(chat_id)
+    msg = await bot.send_photo(
+        chat_id=chat_id,
+        photo=FSInputFile(image_path),
+        caption=caption_html,
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await reg_push(chat_id, msg.message_id)
+    await set_active_msg_id(chat_id, msg.message_id)
+    return msg
 
-    old_ph = await get_placeholder_id(message.chat.id)
-    if old_ph:
-        await delete_safe(message.chat.id, old_ph)
-        await clear_placeholder_id(message.chat.id)
-
-    placeholder = await bot.send_message(message.chat.id, " ", reply_markup=reply_keyboard)
-    await reg_push(message.chat.id, placeholder.message_id)
-    await set_placeholder_id(message.chat.id, placeholder.message_id)
-
+async def edit_media_or_send_new(msg: types.Message, image_path: str, caption_html: str,
+                                 kb: Optional[InlineKeyboardMarkup] = None):
+    """
+    Пытаемся заменить текущее сообщение на фото+подпись.
+    - Если текущее сообщение — медиа: edit_media().
+    - Если текущее сообщение — текст (edit не поддержан): удаляем и отправляем новую медиакарточку.
+    """
+    try:
+        media = InputMediaPhoto(
+            media=FSInputFile(image_path),
+            caption=caption_html,
+            parse_mode="HTML"
+        )
+        await msg.edit_media(media=media, reply_markup=kb)
+        # msg уже остаётся «активным», можно не обновлять active_msg_id
+    except Exception:
+        # Был текст или редактирование не прошло — заменим сообщением с фото
+        await delete_safe(msg.chat.id, msg.message_id)
+        await send_media_card(msg.chat.id, image_path, caption_html, kb)
 # ======================= КОЛБЭКИ =======================
 @dp.callback_query()
 async def callback_handler(cb: types.CallbackQuery):
@@ -403,19 +423,38 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_card(msg, WATER_TEXT_HTML, menu_keyboard)
     elif data == "lost":
         await edit_card(msg, LOST_TEXT_HTML, menu_keyboard)
+
+    # ====== ВАЖНО: для клубов — фото+подпись в одном сообщении ======
     elif data == "case_club":
-        await edit_card(msg, CASE_CLUB_TEXT_HTML, studclubs_keyboard)
+        await edit_media_or_send_new(
+            msg,
+            image_path="img/CaseClub.jpg",
+            caption_html="Telegram: <a href='https://t.me/gsomspbucaseclub'><b>Телеграм</b></a>",
+            kb=studclubs_keyboard
+        )
     elif data == "kbk":
-        await edit_card(msg, section_wrap("КБК", ["Информация о клубе"]), studclubs_keyboard)
+        await edit_media_or_send_new(
+            msg,
+            image_path="img/KBK.jpg",
+            caption_html="<a href='https://t.me/forumcbc'><b>Телеграм</b></a>\т<a href='https://vk.com/forumcbc'><b>BK</b></a>",
+            kb=studclubs_keyboard
+        )
     elif data == "falcon":
-        await edit_card(msg, section_wrap("Falcon Business Club", ["Информация о клубе"]), studclubs_keyboard)
+        await edit_media_or_send_new(
+            msg,
+            image_path="img/Falcon.jpg",
+            caption_html="<a href='https://t.me/falcongsom'><b>Телеграм</b></a>",
+            kb=studclubs_keyboard
+        )
     elif data == "MCW":
-    media = InputMediaPhoto(
-        media=FSInputFile("img/MCW.jpg"),
-        caption="<b>MCW</b>\n\nИнформация о клубе",
-        parse_mode="HTML"
-    )
-        await msg.edit_media(media=media, reply_markup=studclubs_keyboard)
+        await edit_media_or_send_new(
+            msg,
+            image_path="img/MCW.jpg",
+            caption_html="<a href='https://t.me/falcongsom'><b>Телеграм</b></a>",
+            kb=studclubs_keyboard
+        )
+    # ================================================================
+
     elif data == "golf":
         await edit_card(msg, section_wrap("SPbU Golf Club", ["Информация о клубе"]), studclubs_keyboard)
     elif data == "sport_culture":
@@ -430,7 +469,6 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_card(msg, section_wrap("Кураторы", ["@gsomates"]), contacts_keyboard)
 
     await cb.answer("Обновлено ✅", show_alert=False)
-
 # ======================= ЗАПУСК =======================
 async def main():
     try:
