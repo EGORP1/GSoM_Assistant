@@ -436,7 +436,7 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_media_or_send_new(
             msg,
             image_path="img/KBK.jpg",
-            caption_html="<a href='https://t.me/forumcbc'><b>Телеграм</b></a>\т<a href='https://vk.com/forumcbc'><b>BK</b></a>",
+            caption_html="<a href='https://t.me/forumcbc'><b>Телеграм</b></a>\n<a href='https://vk.com/forumcbc'><b>BK</b></a>",
             kb=studclubs_keyboard
         )
     elif data == "falcon":
