@@ -10,7 +10,7 @@ from aiogram.filters import Command
 from aiogram.enums import ChatAction
 from aiogram.types import (
     InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton
+    ReplyKeyboardMarkup, KeyboardButton, InputMediaPhoto
 )
 
 # ======================= ЛОГИ =======================
@@ -410,7 +410,12 @@ async def callback_handler(cb: types.CallbackQuery):
     elif data == "falcon":
         await edit_card(msg, section_wrap("Falcon Business Club", ["Информация о клубе"]), studclubs_keyboard)
     elif data == "MCW":
-        await edit_card(msg, section_wrap("MCW", ["Информация о клубе"]), studclubs_keyboard)
+    media = InputMediaPhoto(
+        media=FSInputFile("img/MCW.jpg"),
+        caption="<b>MCW</b>\n\nИнформация о клубе",
+        parse_mode="HTML"
+    )
+        await msg.edit_media(media=media, reply_markup=studclubs_keyboard)
     elif data == "golf":
         await edit_card(msg, section_wrap("SPbU Golf Club", ["Информация о клубе"]), studclubs_keyboard)
     elif data == "sport_culture":
