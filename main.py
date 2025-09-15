@@ -208,13 +208,21 @@ async def start_handler(message: types.Message):
 @dp.message(Command("clear"))
 async def clear_handler(message: types.Message):
     chat_id = message.chat.id
+
     asyncio.create_task(schedule_delete(chat_id, message.message_id, 1.0))
     async def nuke():
-        await asyncio.sleep(0.7)
-        for mid in await reg_get_all(chat_id): await delete_safe(chat_id, mid)
-        await reg_clear(chat_id); await clear_active_msg_id(chat_id)
+        await asyncio.sleep(0.4)
+        ids = set(await reg_get_all(chat_id))
+        active_id = await get_active_msg_id(chat_id)
+        if active_id:
+            ids.add(active_id)
+        for mid in ids:
+            await delete_safe(chat_id, mid)
+        await reg_clear(chat_id)
+        await clear_active_msg_id(chat_id)
     asyncio.create_task(nuke())
-    confirm = await bot.send_message(chat_id, "🧹 Очищаю всё…"); await reg_push(chat_id, confirm.message_id)
+    confirm = await bot.send_message(chat_id, "🧹 Очищаю всё…")
+    await reg_push(chat_id, confirm.message_id)
     asyncio.create_task(schedule_delete(chat_id, confirm.message_id, 1.0))
 
 @dp.message(F.text == REPLY_START_BTN)
