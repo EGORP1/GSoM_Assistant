@@ -44,6 +44,7 @@ async def think(chat_id: int, delay: float = 0.1):
 
 # ======================= UI-ХЕЛПЕРЫ =======================
 def section(title: str, lines: Sequence[str], footer: Optional[str] = None) -> str:
+    # УБРАНЫ "•"
     body = "\n".join(lines)
     return f"<b>{title}</b>\n\n{body}{('\n\n'+footer) if footer else ''}"
 
@@ -95,7 +96,7 @@ WELCOME_TEXT = (
 LAUNDRY_TEXT_HTML = (
     "🧺 <b>Прачка СПбГУ</b>\n\n"
     "1) <a href=\"https://docs.google.com/spreadsheets/d/1P0C0cLeAVVUPPkjjJ2KXgWVTPK4TEX6aqUblOCUnepI/edit?usp=sharing\">Первый корпус</a>\n"
-    "2) <a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHнNнLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
+    "2) <a href=\"https://docs.google.com/spreadsheets/d/1ztCbv9GyKyNQe5xruOHнНLVwNPLXOcm9MmYw2nP5kU/edit?usp=drivesdk\">Второй корпус</a>\n"
     "3) <a href=\"https://docs.google.com/spreadsheets/d/1xiEC3lD5_9b9Hubot1YH5m7_tOsqMjL39ZIzUtuWffk/edit?usp=sharing\">Третий корпус</a>\n"
     "4) <a href=\"https://docs.google.com/spreadsheets/d/1D-EFVHeAd44Qe7UagronhSF5NS4dP76Q2_CnX1wzQis/edit\">Четвертый корпус</a>\n"
     "5) <a href=\"https://docs.google.com/spreadsheets/d/1XFIQ6GCSrwcBd4FhhJpY897udcCKx6kzOZoTXdCjqhI/edit?usp=sharing\">Пятый корпус</a>\n"
