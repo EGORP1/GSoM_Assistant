@@ -243,7 +243,7 @@ studclubs_keyboard = grid([
     ("КБК",                  "cb", "kbk"),
     ("Falcon Business Club", "cb", "falcon"),
     ("MCW",                  "cb", "MCW"),
-    ("SPbU Golf Club",       "cb", "golf"),
+    ("SPbU TableGames",       "cb", "table"),
     ("Sport and Culture",    "cb", "sport_culture"),
     ("⬅️ Назад",             "cb", "back_main"),
 ], per_row=2)
@@ -351,28 +351,42 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_media_or_send_new(
             msg,
             image_path="img/CaseClub.jpg",
-            caption_html="📊 <b>GSOM SPbU Case Club</b>\n\n<a href='https://t.me/gsomspbucaseclub'>Перейти в Telegram</a>",
+            caption_html="<b>GSOM SPbU Case Club</b>\n\n<a href='https://t.me/gsomspbucaseclub'>Перейти в Telegram</a>",
+            kb=studclubs_keyboard
+        )
+    elif data == "table":
+        await edit_media_or_send_new(
+            msg,
+            image_path="img/CaseClub.jpg",
+            caption_html="\n\n<a href='https://t.me/gsomspbucaseclub'>Перейти в Telegram</a>",
+            kb=studclubs_keyboard
+        )  
+    elif data == "sport_culture":
+        await edit_media_or_send_new(
+            msg,
+            image_path="img/CaseClub.jpg",
+            caption_html="<a href='https://t.me/gsomspbucaseclub'>Перейти в Telegram</a>",
             kb=studclubs_keyboard
         )
     elif data == "kbk":
         await edit_media_or_send_new(
             msg,
             image_path="img/KBK.jpg",
-            caption_html="🎤 <b>КБК</b>\n\n<a href='https://t.me/forumcbc'>Telegram</a>\n<a href='https://vk.com/forumcbc'>VK</a>",
+            caption_html="<b>КБК</b>\n\n<a href='https://t.me/forumcbc'>Telegram</a>\n<a href='https://vk.com/forumcbc'>VK</a>",
             kb=studclubs_keyboard
         )
     elif data == "falcon":
         await edit_media_or_send_new(
             msg,
             image_path="img/Falcon.jpg",
-            caption_html="🦅 <b>Falcon Business Club</b>\n\n<a href='https://t.me/falcongsom'>Telegram</a>",
+            caption_html="<b>Falcon Business Club</b>\n\n<a href='https://t.me/falcongsom'>Telegram</a>",
             kb=studclubs_keyboard
         )
     elif data == "MCW":
         await edit_media_or_send_new(
             msg,
             image_path="img/MCW.jpg",
-            caption_html="📌 <b>Management Career Week</b>\n\n<a href='https://t.me/falcongsom'>Telegram</a>",
+            caption_html="<b>Management Career Week</b>\n\n<a href='https://t.me/falcongsom'>Telegram</a>",
             kb=studclubs_keyboard
         )
 
@@ -381,7 +395,6 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_text_or_send_new(msg, section("📞 Контакты", ["Выбери категорию ниже 👇"]), contacts_keyboard)
 
     elif data == "contact_admin":
-        # ✅ ADMIN: показываем подробные контакты администрации
         await edit_text_or_send_new(msg, ADMIN_CONTACTS_HTML, contacts_keyboard)
 
     elif data == "contact_teachers":
