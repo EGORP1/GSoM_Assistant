@@ -243,7 +243,7 @@ studclubs_keyboard = grid([
     ("КБК",                  "cb", "kbk"),
     ("Falcon Business Club", "cb", "falcon"),
     ("MCW",                  "cb", "MCW"),
-    ("SPbU TableGames",       "cb", "table"),
+    ("SPbU Golden Cube",       "cb", "cube"),
     ("Sport and Culture",    "cb", "sport_culture"),
     ("⬅️ Назад",             "cb", "back_main"),
 ], per_row=2)
@@ -351,42 +351,42 @@ async def callback_handler(cb: types.CallbackQuery):
         await edit_media_or_send_new(
             msg,
             image_path="img/CaseClub.jpg",
-            caption_html="<b>GSOM SPbU Case Club</b>\n\n<a href='https://t.me/gsomspbucaseclub'>Перейти в Telegram</a>",
+            caption_html="<a href='https://t.me/gsomspbucaseclub'><b>Перейти в Telegram</b></a>",
             kb=studclubs_keyboard
         )
-    elif data == "table":
+    elif data == "cube":
         await edit_media_or_send_new(
             msg,
-            image_path="img/CaseClub.jpg",
-            caption_html="\n\n<a href='https://t.me/gsomspbucaseclub'>Перейти в Telegram</a>",
+            image_path="img/cube.jpg",
+            caption_html="<a href='https://t.me/mafia_gsom'><b>Перейти в Telegram</b></a>",
             kb=studclubs_keyboard
         )  
     elif data == "sport_culture":
         await edit_media_or_send_new(
             msg,
-            image_path="img/CaseClub.jpg",
-            caption_html="<a href='https://t.me/gsomspbucaseclub'>Перейти в Telegram</a>",
+            image_path="sport.jpg",
+            caption_html="<a href='https://t.me/gsomsport'><b>Перейти в Telegram</b></a>",
             kb=studclubs_keyboard
         )
     elif data == "kbk":
         await edit_media_or_send_new(
             msg,
             image_path="img/KBK.jpg",
-            caption_html="<b>КБК</b>\n\n<a href='https://t.me/forumcbc'>Telegram</a>\n<a href='https://vk.com/forumcbc'>VK</a>",
+            caption_html="<a href='https://t.me/forumcbc'><b>Перейти в Telegram</b></a>\n<a href='https://vk.com/forumcbc'><b>Перейти в VK</b></a>",
             kb=studclubs_keyboard
         )
     elif data == "falcon":
         await edit_media_or_send_new(
             msg,
             image_path="img/Falcon.jpg",
-            caption_html="<b>Falcon Business Club</b>\n\n<a href='https://t.me/falcongsom'>Telegram</a>",
+            caption_html="<a href='https://t.me/falcongsom'><b>Перейти в Telegram</b></a>",
             kb=studclubs_keyboard
         )
     elif data == "MCW":
         await edit_media_or_send_new(
             msg,
             image_path="img/MCW.jpg",
-            caption_html="<b>Management Career Week</b>\n\n<a href='https://t.me/falcongsom'>Telegram</a>",
+            caption_html="<a href='https://t.me/mcwgsom'><b>Перейти в Telegram</b></a>",
             kb=studclubs_keyboard
         )
 
